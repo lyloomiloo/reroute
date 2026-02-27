@@ -711,7 +711,7 @@ function PageContent() {
                         <p className="text-base text-gray-500 mt-1 reroute-uppercase">
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
                         </p>
-                        <p className="font-mono font-normal text-[16px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
+                        <p className="font-mono font-bold text-[16px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
                         <div className="mt-3 pt-3 border-t border-gray-100">
@@ -777,10 +777,7 @@ function PageContent() {
                 headlineVisible && !inputFocused && !startInputFocused ? "opacity-100 mb-1" : "opacity-0 h-0 mb-0 pointer-events-none"
               }`}
             >
-              <h1
-                className="font-mono font-normal text-xl tracking-tight text-black reroute-uppercase leading-tight line-clamp-2"
-                style={{ fontSize: "clamp(42px, 10.4vw, 68px)", letterSpacing: "-0.05em", wordSpacing: "-0.2em", lineHeight: 0.95 }}
-              >
+              <h1 className="font-mono font-bold text-lg leading-tight text-black">
                 What are you in the mood for?
               </h1>
             </div>
@@ -1002,8 +999,8 @@ function PageContent() {
               {placeOptions && placeOptions.length > 0 && (
                 <div className="px-4 py-3">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-mono font-bold text-sm tracking-wide uppercase">
-                      Choose a place
+                    <span className="font-mono font-bold text-sm tracking-wide">
+                      CHOOSE A PLACE
                     </span>
                     <button
                       type="button"
@@ -1014,7 +1011,7 @@ function PageContent() {
                       ✕
                     </button>
                   </div>
-                  <p className="font-mono font-normal text-[16px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
+                  <p className="font-mono font-bold text-[16px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
                     BETA · RESULTS MAY NOT BE PERFECT · CHECK REVIEWS
                   </p>
 
@@ -1078,7 +1075,7 @@ function PageContent() {
                                     <span>{place.rating.toFixed(1)} ★ · </span>
                                   )}
                                 </div>
-                                <div className="font-mono font-medium text-[10px] text-gray-500 line-clamp-2 min-h-0 overflow-hidden">
+                                <div className="font-mono text-[10px] text-gray-500 line-clamp-1">
                                   {place.description ? place.description.replace(/\.$/, "") : null}
                                 </div>
                               </div>
