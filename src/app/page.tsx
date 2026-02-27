@@ -514,7 +514,7 @@ function PageContent() {
           </span>
         </div>
       )}
-      <div className="h-[100dvh] flex flex-col bg-white">
+      <div className="h-[100dvh] flex flex-col bg-[#f0f0f0]">
         <>
           {/* Edge-case centered modal */}
           {edgeCaseMessage && (
@@ -545,7 +545,7 @@ function PageContent() {
             </div>
           )}
           {/* Map fills remaining space; route results overlay at bottom */}
-          <div className="flex-1 relative overflow-hidden flex flex-col min-h-0">
+          <div className="flex-1 relative overflow-hidden flex flex-col min-h-0 bg-[#f0f0f0]">
             {isLoading && (
               <div className="absolute inset-0 bg-white/80 z-[50] flex flex-col items-center justify-center">
                 <pre className="loading-walker text-[10px] leading-[1.2] text-black font-mono whitespace-pre text-center" aria-hidden>

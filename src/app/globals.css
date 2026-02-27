@@ -12,15 +12,23 @@
   --frame: #1a1a1a;
 }
 
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  background-color: #f0f0f0;
+}
+
 html,
 body {
   height: 100%;
-  background-color: #ffffff;
   overscroll-behavior: none;
 }
 
 body {
-  background: var(--frame);
+  background-color: #f0f0f0;
+  min-height: 100dvh;
   color: var(--foreground);
   font-family: "SF Mono", "Fira Code", "Courier New", monospace;
 }
@@ -32,9 +40,10 @@ body {
   letter-spacing: 0.08em;
 }
 
-/* Map container z-index */
+/* Map container z-index and tile-matching background */
 .leaflet-container {
   z-index: 1;
+  background-color: #f0f0f0 !important;
 }
 
 .leaflet-pane {
