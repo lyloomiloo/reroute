@@ -514,7 +514,7 @@ function PageContent() {
           </span>
         </div>
       )}
-      <div className="relative h-full min-h-0 flex flex-col" style={{ minHeight: "100dvh" }}>
+      <div className="h-[100dvh] flex flex-col">
         <>
           {/* Edge-case centered modal */}
           {edgeCaseMessage && (
@@ -544,8 +544,8 @@ function PageContent() {
               </div>
             </div>
           )}
-          {/* TOP: Map + route results */}
-          <div className="flex-1 min-h-0 relative flex flex-col" style={{ minHeight: "45vh" }}>
+          {/* Map fills remaining space; route results overlay at bottom */}
+          <div className="flex-1 relative overflow-hidden flex flex-col min-h-0">
             {isLoading && (
               <div className="absolute inset-0 bg-white/80 z-[50] flex flex-col items-center justify-center">
                 <pre className="loading-walker text-[10px] leading-[1.2] text-black font-mono whitespace-pre text-center" aria-hidden>
@@ -662,14 +662,8 @@ function PageContent() {
             )}
           </div>
 
-          {/* BOTTOM: Input section — moves to fixed top when any input focused so mobile keyboard doesn't block it */}
-          <div
-            className={`transition-all duration-200 ${
-              inputFocused || startInputFocused
-                ? "fixed top-0 left-0 right-0 z-50 bg-white p-4 border-b border-gray-100"
-                : "shrink-0 px-4 pt-3 pb-4 z-10 bg-background border-t border-gray-100"
-            }`}
-          >
+          {/* BOTTOM: Input section — flex-shrink-0 so keyboard shrinks map, not this */}
+          <div className="flex-shrink-0 z-10 bg-white px-4 pt-3 pb-[env(safe-area-inset-bottom)] border-t border-gray-100">
             {/* Headline: hidden when section is fixed at top (any input focused) */}
             <div
               className={`overflow-hidden transition-all duration-200 ${
@@ -677,7 +671,7 @@ function PageContent() {
               }`}
             >
               <h1
-                className="text-black font-semibold reroute-uppercase leading-tight line-clamp-2"
+                className="font-mono font-bold text-lg text-black reroute-uppercase leading-tight line-clamp-2"
                 style={{ fontSize: "clamp(22px, 5.5vw, 36px)", letterSpacing: "-0.05em", wordSpacing: "-0.2em", lineHeight: 0.95 }}
               >
                 What are you in the mood for?
