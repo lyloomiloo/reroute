@@ -1344,7 +1344,7 @@ async function rerankByObjectiveFit(
 For each place, return a JSON array of objects with:
 - index (1-based, matching the input order)
 - fit_score (0-10, how well this place meets the SPECIFIC need)
-- reason (3-5 words explaining the fit)
+- reason (6-10 words explaining the fit)
 
 Use your knowledge of Barcelona places. Score based on:
 - Review data (if provided): Look for SPECIFIC KEYWORDS that match the user's need. "wifi" or "laptop" in reviews = strong signal for coworking. "spacious" or "big tables" = good for groups. Quote the relevant keyword in your reason if found.
@@ -1793,7 +1793,7 @@ Respond with ONLY the tags, nothing else.`,
   return tags.join(" · ") || "";
 }
 
-/** One batch LLM call to generate 3-5 word descriptions for places that only have a generic type. Optional searchQuery tailors descriptions to what the user is looking for (e.g. "laptop-friendly cafes" → focus on wifi/power outlets). */
+/** One batch LLM call to generate 6-10 word descriptions for places that only have a generic type. Optional searchQuery tailors descriptions to what the user is looking for (e.g. "laptop-friendly cafes" → focus on wifi/power outlets). */
 async function generatePlaceDescriptions(
   places: { name: string; primaryType?: string }[],
   searchQuery?: string | null
@@ -1803,8 +1803,8 @@ async function generatePlaceDescriptions(
   if (!apiKey) return places.map(() => "");
   const list = places.map((p, i) => `${i + 1}. ${p.name}${p.primaryType ? ` (${p.primaryType})` : ""}`).join("\n");
   const contextInstruction = searchQuery?.trim()
-    ? `The user searched for: "${searchQuery.trim()}". For each place, write a 3-5 word description relevant to what they're looking for. You may infer likely features ONLY from the place NAME and TYPE — for example, a place called "Nomad Coffee Lab" is likely specialty coffee; a place with "coworking" in the name likely has wifi. But NEVER invent specific amenities (wifi, power sockets, terrace, outdoor seating) unless the name strongly implies them. When unsure, describe what type of place it is. Keep 3-5 words.`
-    : `For each place, write a 3-5 word description based ONLY on its name and type. Describe what kind of place it is in a warm, specific way. NEVER invent amenities or features (wifi, seating, terrace, decor) — if you don't know, describe the type and vibe the name suggests. Examples: "Bodega La Palma" → "Traditional bodega, wine and tapas". "Cafè del Born" → "Neighborhood café in El Born". Keep 3-5 words.`;
+    ? `The user searched for: "${searchQuery.trim()}". For each place, write a 6-10 word description relevant to what they're looking for. You may infer likely features ONLY from the place NAME and TYPE — for example, a place called "Nomad Coffee Lab" is likely specialty coffee; a place with "coworking" in the name likely has wifi. But NEVER invent specific amenities (wifi, power sockets, terrace, outdoor seating) unless the name strongly implies them. When unsure, describe what type of place it is. Keep 6-10 words.`
+    : `For each place, write a 6-10 word description based ONLY on its name and type. Describe what kind of place it is in a warm, specific way. NEVER invent amenities or features (wifi, seating, terrace, decor) — if you don't know, describe the type and vibe the name suggests. Examples: "Bodega La Palma" → "Traditional bodega, wine and tapas". "Cafè del Born" → "Neighborhood café in El Born". Keep 6-10 words.`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -1837,7 +1837,7 @@ Reply with one line per place, in the same order, numbered 1., 2., etc. Nothing 
   return places.map((_, i) => lines[i] ?? "");
 }
 
-/** One batch LLM call: returns 3-5 word descriptions for each POI. If it fails, return empty so we show name only. */
+/** One batch LLM call: returns 6-10 word descriptions for each POI. If it fails, return empty so we show name only. */
 async function generatePoiLabels(
   highlights: { name?: string; type: string }[]
 ): Promise<string[]> {
@@ -1861,7 +1861,7 @@ async function generatePoiLabels(
       messages: [
         {
           role: "system",
-          content: `You will receive a list of place names and their Google Maps type. For each, return a JSON array of 3-5 word descriptions. Be specific and factual. No generic words like 'experience', 'discover', 'explore', 'authentic', 'hidden gem', 'must-visit'. Keep each description under 60 characters. Every description must be a complete phrase — never cut off mid-sentence. If you can't fit the full thought in 60 characters, write a shorter one instead. Examples: "Gaudí's mosaic apartment", "outdoor market, fresh produce", "Gothic cloister", "third-wave coffee". Reply with ONLY a valid JSON array of strings, one string per place, in the same order.`,
+          content: `You will receive a list of place names and their Google Maps type. For each, return a JSON array of 6-10 word descriptions. Be specific and factual. No generic words like 'experience', 'discover', 'explore', 'authentic', 'hidden gem', 'must-visit'. Keep each description under 60 characters. Every description must be a complete phrase — never cut off mid-sentence. If you can't fit the full thought in 60 characters, write a shorter one instead. Examples: "Gaudí's mosaic apartment", "outdoor market, fresh produce", "Gothic cloister", "third-wave coffee". Reply with ONLY a valid JSON array of strings, one string per place, in the same order.`,
         },
         {
           role: "user",

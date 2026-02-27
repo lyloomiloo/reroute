@@ -700,18 +700,18 @@ function PageContent() {
                     const active = routes.quick && showQuick ? routes.quick : routes.recommended;
                     return (
                       <>
-                        <p className="text-base text-foreground reroute-uppercase font-bold pr-10">{active.summary}</p>
+                        <p className="font-mono font-bold text-lg leading-tight uppercase pr-10">{active.summary}</p>
                         {routes.destination_name && (
-                          <p className="text-base text-gray-600 mt-1 reroute-uppercase">
+                          <p className="font-mono text-sm text-gray-500 mt-2">
                             {routes.pattern === "mood_and_area"
                               ? `WALK IN ${routes.destination_name}`
                               : `→ ${routes.destination_name}`}
                           </p>
                         )}
-                        <p className="text-base text-gray-500 mt-1 reroute-uppercase">
+                        <p className="font-mono text-xs text-gray-400">
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
                         </p>
-                        <p className="font-mono font-bold text-[16px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
+                        <p className="font-mono text-[9px] text-[#4A90D9] mt-2">
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
                         <div className="mt-3 pt-3 border-t border-gray-100">
@@ -777,8 +777,8 @@ function PageContent() {
                 headlineVisible && !inputFocused && !startInputFocused ? "opacity-100 mb-1" : "opacity-0 h-0 mb-0 pointer-events-none"
               }`}
             >
-              <h1 className="font-mono font-bold text-lg leading-tight text-black">
-                What are you in the mood for?
+              <h1 className="font-mono font-bold text-2xl leading-tight uppercase">
+                WHAT ARE YOU IN THE MOOD FOR?
               </h1>
             </div>
             <div className="flex gap-2 items-center">
@@ -840,7 +840,7 @@ function PageContent() {
                 →
               </button>
             </div>
-            <p className="mt-1 font-mono text-xs font-normal text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis" style={{ letterSpacing: "-0.02em" }} aria-hidden>
+            <p className="mt-1 font-mono text-[8px] font-normal text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis" style={{ letterSpacing: "-0.02em" }} aria-hidden>
               e.g. calm walk by the beach, architecture hunt in Eixample.
             </p>
             {routeError && (
@@ -999,7 +999,7 @@ function PageContent() {
               {placeOptions && placeOptions.length > 0 && (
                 <div className="px-4 py-3">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-mono font-bold text-sm tracking-wide">
+                    <span className="font-mono font-bold text-lg tracking-wide">
                       CHOOSE A PLACE
                     </span>
                     <button
@@ -1011,7 +1011,7 @@ function PageContent() {
                       ✕
                     </button>
                   </div>
-                  <p className="font-mono font-bold text-[16px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
+                  <p className="font-mono font-bold text-[11px] text-[#4A90D9] tracking-wide mt-1 mb-2">
                     BETA · RESULTS MAY NOT BE PERFECT · CHECK REVIEWS
                   </p>
 
@@ -1070,12 +1070,12 @@ function PageContent() {
                             </div>
                             <div className="flex items-end gap-2 mt-1 flex-1">
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm text-gray-400">
+                                <div className="font-mono text-[10px] text-gray-400">
                                   {place.rating != null && (
                                     <span>{place.rating.toFixed(1)} ★ · </span>
                                   )}
                                 </div>
-                                <div className="font-mono text-[10px] text-gray-500 line-clamp-1">
+                                <div className="font-mono text-[10px] text-gray-500 line-clamp-3">
                                   {place.description ? place.description.replace(/\.$/, "") : null}
                                 </div>
                               </div>
