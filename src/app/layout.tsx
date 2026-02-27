@@ -7,14 +7,14 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 export const metadata: Metadata = {
   title: "(re)Route",
   description: "Walk your way. AI-powered navigation for the walks you actually want.",
-  applicationName: "snapp",
+  applicationName: "(re)Route",
   icons: {
     icon: "/favicon.ico",
     apple: "/icon-192x192.png",
   },
   appleWebApp: {
     capable: true,
-    title: "snapp",
+    title: "(re)Route",
     statusBarStyle: "default",
   },
 };

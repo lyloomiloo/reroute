@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-const STORAGE_KEY_ALLOWED = "daily-quest-location-allowed";
-const STORAGE_KEY_SKIPPED = "daily-quest-location-skipped";
+const STORAGE_KEY_ALLOWED = "reroute-location-allowed";
+const STORAGE_KEY_SKIPPED = "reroute-location-skipped";
 
 type GateStatus = "checking" | "prompt" | "denied" | "allowed";
 

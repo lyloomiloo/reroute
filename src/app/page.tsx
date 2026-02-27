@@ -520,14 +520,14 @@ function PageContent() {
           {edgeCaseMessage && (
             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50" aria-modal="true" role="dialog" aria-labelledby="edge-case-title">
               <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full px-5 py-5 font-mono border border-gray-200">
-                <p id="edge-case-title" className="text-sm text-foreground snapp-uppercase font-medium leading-snug">
+                <p id="edge-case-title" className="text-sm text-foreground reroute-uppercase font-medium leading-snug">
                   {edgeCaseMessage}
                 </p>
                 <div className="mt-4 flex gap-3">
                   <button
                     type="button"
                     onClick={handleDismissEdgeCase}
-                    className="flex-1 py-2.5 text-xs font-medium snapp-uppercase border border-gray-300 text-gray-800 hover:bg-gray-50 rounded-none"
+                    className="flex-1 py-2.5 text-xs font-medium reroute-uppercase border border-gray-300 text-gray-800 hover:bg-gray-50 rounded-none"
                   >
                     Back
                   </button>
@@ -535,7 +535,7 @@ function PageContent() {
                     <button
                       type="button"
                       onClick={handleSurpriseMeFromEdgeCase}
-                      className="flex-1 py-2.5 text-xs font-medium snapp-uppercase bg-black text-white hover:opacity-90 rounded-none"
+                      className="flex-1 py-2.5 text-xs font-medium reroute-uppercase bg-black text-white hover:opacity-90 rounded-none"
                     >
                       Surprise me
                     </button>
@@ -596,15 +596,15 @@ function PageContent() {
                     const active = routes.quick && showQuick ? routes.quick : routes.recommended;
                     return (
                       <>
-                        <p className="text-sm text-foreground snapp-uppercase font-medium pr-10">{active.summary}</p>
+                        <p className="text-sm text-foreground reroute-uppercase font-medium pr-10">{active.summary}</p>
                         {routes.destination_name && (
-                          <p className="text-xs text-gray-600 mt-1 snapp-uppercase">
+                          <p className="text-xs text-gray-600 mt-1 reroute-uppercase">
                             {routes.pattern === "mood_and_area"
                               ? `WALK IN ${routes.destination_name}`
                               : `→ ${routes.destination_name}`}
                           </p>
                         )}
-                        <p className="text-xs text-gray-500 mt-1 snapp-uppercase">
+                        <p className="text-xs text-gray-500 mt-1 reroute-uppercase">
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
                         </p>
                         <p className="text-[10px] text-gray-400 mt-1 font-mono tracking-wide">
@@ -616,12 +616,12 @@ function PageContent() {
                                 <button
                                   type="button"
                                   onClick={() => setShowQuick(false)}
-                                  className="text-xs text-gray-600 underline snapp-uppercase"
+                                  className="text-xs text-gray-600 underline reroute-uppercase"
                                 >
                                   {routes.default_is_fastest ? "Use fastest route" : getUseRouteLabel(routes.intent)}
                                 </button>
                               ) : (
-                                <p className="text-xs text-gray-500 snapp-uppercase">
+                                <p className="text-xs text-gray-500 reroute-uppercase">
                                   {routes.default_is_fastest
                                     ? `${getIntentRouteLabel(routes.intent)}: ${formatDuration(routes.quick.duration)} — `
                                     : `Fastest route: ${formatDuration(routes.quick.duration)} — `}
@@ -642,14 +642,14 @@ function PageContent() {
                               type="button"
                               onClick={handleTryAnotherRoute}
                               disabled={isLoading}
-                              className="flex-1 py-3 border border-gray-300 text-gray-700 text-xs snapp-uppercase font-medium rounded-none hover:bg-gray-50 disabled:opacity-50"
+                              className="flex-1 py-3 border border-gray-300 text-gray-700 text-xs reroute-uppercase font-medium rounded-none hover:bg-gray-50 disabled:opacity-50"
                             >
                               ↻ Try another route
                             </button>
                           )}
                           <button
                             type="button"
-                            className="flex-1 py-3 bg-black text-white text-sm snapp-uppercase font-medium rounded-none"
+                            className="flex-1 py-3 bg-black text-white text-sm reroute-uppercase font-medium rounded-none"
                           >
                             Let&apos;s go
                           </button>
@@ -677,7 +677,7 @@ function PageContent() {
               }`}
             >
               <h1
-                className="text-black font-semibold snapp-uppercase leading-tight line-clamp-2"
+                className="text-black font-semibold reroute-uppercase leading-tight line-clamp-2"
                 style={{ fontSize: "clamp(22px, 5.5vw, 36px)", letterSpacing: "-0.05em", wordSpacing: "-0.2em", lineHeight: 0.95 }}
               >
                 What are you in the mood for?
@@ -742,7 +742,7 @@ function PageContent() {
               e.g. calm walk by the beach, architecture hunt in Eixample.
             </p>
             {routeError && (
-              <p className="mt-1.5 text-[10px] text-red-600 snapp-uppercase" role="alert">
+              <p className="mt-1.5 text-[10px] text-red-600 reroute-uppercase" role="alert">
                 {routeError}
               </p>
             )}
@@ -761,7 +761,7 @@ function PageContent() {
                     setPlaceOptions(null);
                     setPlaceOptionsShownCount(5);
                   }}
-                  className="group inline-flex items-center gap-1.5 py-0.5 text-[10px] text-blue-600/70 hover:text-blue-500 hover:font-bold snapp-uppercase tracking-wider whitespace-nowrap"
+                  className="group inline-flex items-center gap-1.5 py-0.5 text-[10px] text-blue-600/70 hover:text-blue-500 hover:font-bold reroute-uppercase tracking-wider whitespace-nowrap"
                   aria-expanded={false}
                   aria-label={customStart ? "Starting point" : "Change starting point"}
                 >
@@ -796,7 +796,7 @@ function PageContent() {
               ) : (
                 <>
                   <div className="flex items-center gap-1.5 flex-wrap text-blue-600/70 text-[10px]">
-                    <span className="snapp-uppercase tracking-wider shrink-0">From:</span>
+                    <span className="reroute-uppercase tracking-wider shrink-0">From:</span>
             <input
                       type="text"
                       placeholder="e.g. Plaça Catalunya"
@@ -815,7 +815,7 @@ function PageContent() {
                       type="button"
                       onClick={handleSetStartPoint}
                       disabled={startPointGeocoding || !startPointInput.trim()}
-                      className="shrink-0 text-[10px] hover:text-blue-500 disabled:opacity-40 snapp-uppercase"
+                      className="shrink-0 text-[10px] hover:text-blue-500 disabled:opacity-40 reroute-uppercase"
                     >
                       {startPointGeocoding ? "…" : "Set"}
                     </button>
@@ -830,34 +830,34 @@ function PageContent() {
                   </div>
                   {/* Address confirmation / autocomplete below input */}
                   {startPointGeocoding && (
-                    <p className="mt-1.5 text-[10px] text-gray-500 snapp-uppercase">Searching…</p>
+                    <p className="mt-1.5 text-[10px] text-gray-500 reroute-uppercase">Searching…</p>
                   )}
                   {startPointError && (
-                    <p className="mt-1.5 text-[10px] text-red-600 snapp-uppercase">{startPointError}</p>
+                    <p className="mt-1.5 text-[10px] text-red-600 reroute-uppercase">{startPointError}</p>
                   )}
                   {!startPointGeocoding && startPointSearchDone && startPointResults !== null && !startPointError && (
                     <>
                       {startPointResults.length === 0 ? (
-                        <p className="mt-1.5 text-[10px] text-red-600 snapp-uppercase">
+                        <p className="mt-1.5 text-[10px] text-red-600 reroute-uppercase">
                           Start point must be within Barcelona.
                         </p>
                       ) : startPointResults.length === 1 ? (
                         <button
                           type="button"
                           onClick={() => applyStartPointResult(startPointResults[0])}
-                          className="mt-1.5 text-left text-[10px] text-green-700 snapp-uppercase hover:text-green-800 hover:underline cursor-pointer"
+                          className="mt-1.5 text-left text-[10px] text-green-700 reroute-uppercase hover:text-green-800 hover:underline cursor-pointer"
                         >
                           ✓ {startPointResults[0].displayName}
                         </button>
                       ) : (
                         <div className="mt-1.5 flex flex-col gap-0.5">
-                          <p className="text-[10px] text-gray-500 snapp-uppercase">Pick an address:</p>
+                          <p className="text-[10px] text-gray-500 reroute-uppercase">Pick an address:</p>
                           {startPointResults.map((r, i) => (
                             <button
                               key={`${r.lat}-${r.lng}`}
                               type="button"
                               onClick={() => applyStartPointResult(r)}
-                              className={`text-left text-[10px] py-1 px-1.5 rounded border snapp-uppercase transition-colors ${
+                              className={`text-left text-[10px] py-1 px-1.5 rounded border reroute-uppercase transition-colors ${
                                 startPointSelectedIndex === i
                                   ? "border-green-600 bg-green-50 text-green-800"
                                   : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
@@ -875,14 +875,14 @@ function PageContent() {
             </div>
             {durationPrompt && (
                 <div className="mt-4">
-                  <p className="text-sm text-gray-600 mb-2 snapp-uppercase">{durationPrompt.message}</p>
+                  <p className="text-sm text-gray-600 mb-2 reroute-uppercase">{durationPrompt.message}</p>
                   <div className="flex flex-wrap gap-2">
                     {durationPrompt.options.map((opt) => (
                       <button
                         key={opt.value}
                         type="button"
                         onClick={() => handleDurationPick(opt.value)}
-                        className={`px-4 py-2 rounded-none text-sm transition-colors snapp-uppercase ${
+                        className={`px-4 py-2 rounded-none text-sm transition-colors reroute-uppercase ${
                           opt.value === 0
                             ? "bg-black text-white hover:opacity-90"
                             : "bg-gray-100 text-gray-700 hover:bg-gray-200"

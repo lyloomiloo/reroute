@@ -45,7 +45,7 @@ export default function PhotoPreview({
   }, [previewUrl]);
 
   const handleSave = useCallback(() => {
-    downloadImage(previewUrl, `daily-quest-${wordDate}.jpg`);
+    downloadImage(previewUrl, `reroute-${wordDate}.jpg`);
   }, [previewUrl, wordDate]);
 
   const handleDropIt = async () => {

@@ -23,8 +23,9 @@ body {
   font-family: "SF Mono", "Fira Code", "Courier New", monospace;
 }
 
-/* SNAPP-style uppercase labels/buttons: tracked monospace */
-.snapp-uppercase {
+/* (re)Route uppercase labels/buttons: tracked monospace */
+.snapp-uppercase,
+.reroute-uppercase {
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
