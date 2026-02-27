@@ -782,7 +782,7 @@ function PageContent() {
                   ref={moodInputRef}
                   type="text"
                   placeholder="Type your vibe..."
-                  className="w-full bg-transparent border-0 border-b border-gray-300 py-2 pr-8 font-mono text-base font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-black transition-colors"
+                  className="w-full bg-transparent border-0 border-b border-gray-300 py-2 pr-8 font-mono text-sm font-normal text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-black transition-colors"
                   value={moodInput}
                   onChange={(e) => setMoodInput(e.target.value)}
                   onPointerDown={() => {
@@ -835,7 +835,7 @@ function PageContent() {
                 →
               </button>
             </div>
-            <p className="mt-1 font-mono text-sm font-medium text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis" style={{ letterSpacing: "-0.02em" }} aria-hidden>
+            <p className="mt-1 font-mono text-xs font-normal text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis" style={{ letterSpacing: "-0.02em" }} aria-hidden>
               e.g. calm walk by the beach, architecture hunt in Eixample.
             </p>
             {routeError && (
@@ -858,7 +858,7 @@ function PageContent() {
                     setPlaceOptions(null);
                     setPlaceOptionsShownCount(5);
                   }}
-                  className="group inline-flex items-center gap-1.5 py-0.5 font-mono text-sm font-bold tracking-wide text-blue-600/70 hover:text-blue-500 reroute-uppercase whitespace-nowrap"
+                  className="group inline-flex items-center gap-1.5 py-0.5 font-mono text-xs font-normal tracking-wide text-blue-600/70 hover:text-blue-500 reroute-uppercase whitespace-nowrap"
                   aria-expanded={false}
                   aria-label={customStart ? "Starting point" : "Change starting point"}
                 >
