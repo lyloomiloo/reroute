@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Leaflet default styles (required for map) */
+@import "leaflet/dist/leaflet.css";
+
+:root {
+  --background: #ffffff;
+  --foreground: #000000;
+  --muted: #888888;
+  --frame: #1a1a1a;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--frame);
+  color: var(--foreground);
+  font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+}
+
+/* SNAPP-style uppercase labels/buttons: tracked monospace */
+.snapp-uppercase {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Map container z-index */
+.leaflet-container {
+  z-index: 1;
+}
+
+.leaflet-pane {
+  z-index: 1;
+}
+
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 10;
+}
+
+/* Custom marker / pin layer above tiles */
+.leaflet-marker-pane {
+  z-index: 10;
+}
+
+/* Custom pin: no default Leaflet icon background */
+.custom-pin-no-default {
+  background: none !important;
+  border: none !important;
+}
+
+@keyframes pin-pulse {
+  0%, 100% { box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+  50% { box-shadow: 0 0 0 4px rgba(0,0,0,0.3); }
+}
+
+.pin-pulse {
+  animation: pin-pulse 1s ease-in-out 3;
+}
+
+@keyframes user-location-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.6; }
+}
+
+.user-location-dot {
+  animation: user-location-pulse 2s ease-in-out infinite;
+}
+
+@keyframes countdown-dot-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.countdown-dot-blink {
+  animation: countdown-dot-blink 1s ease-in-out infinite;
+}
+
+@keyframes walk {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(6px); }
+}
+
+.loading-walker {
+  animation: walk 0.7s ease-in-out infinite;
+}
+
+/* Hide scrollbar but keep scroll functional */
+.scrollbar-hide {
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.poi-gallery::-webkit-scrollbar {
+  display: none;
+}
+
+/* 2-line clamp for place name */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

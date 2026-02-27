@@ -1,0 +1,10 @@
+node_modules/
+node_modules/
+.next/
+.next/
+.env.local
+.vercel
+.env*.local
+src/data/barcelona_street_scores.geojson
+.env.local
+.env.localt

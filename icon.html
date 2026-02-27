@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head><title>Icon Generator</title></head>
+<body style="background: #333; padding: 20px;">
+  <canvas id="c512" width="512" height="512"></canvas>
+  <canvas id="c192" width="192" height="192"></canvas>
+  <canvas id="c180" width="180" height="180"></canvas>
+  <script>
+    function draw(id, size) {
+      const canvas = document.getElementById(id);
+      const ctx = canvas.getContext('2d');
+      
+      // White background
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, size, size);
+      
+      // Left eye - white circle
+      ctx.beginPath();
+      ctx.arc(size * 0.32, size * 0.5, size * 0.22, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fill();
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = size * 0.03;
+      ctx.stroke();
+      
+      // Left eye - black pupil (looking right/down)
+      ctx.beginPath();
+      ctx.arc(size * 0.38, size * 0.55, size * 0.10, 0, Math.PI * 2);
+      ctx.fillStyle = '#000000';
+      ctx.fill();
+      
+      // Right eye - white circle
+      ctx.beginPath();
+      ctx.arc(size * 0.68, size * 0.5, size * 0.22, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fill();
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = size * 0.03;
+      ctx.stroke();
+      
+      // Right eye - black pupil (looking right/down)
+      ctx.beginPath();
+      ctx.arc(size * 0.74, size * 0.55, size * 0.10, 0, Math.PI * 2);
+      ctx.fillStyle = '#000000';
+      ctx.fill();
+    }
+    draw('c512', 512);
+    draw('c192', 192);
+    draw('c180', 180);
+  </script>
+  <p style="color:white">Right-click each canvas → Save image as:</p>
+  <p style="color:white">icon-512.png, icon-192.png, apple-touch-icon.png</p>
+</body>
+</html>

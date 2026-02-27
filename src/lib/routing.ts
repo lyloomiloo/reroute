@@ -1,0 +1,277 @@
+export type Intent = "calm" | "discover" | "nature" | "scenic" | "lively" | "exercise" | "cafe" | "quick";
+
+export interface RouteHighlight {
+  lat: number;
+  lng: number;
+  label: string;
+  type: string;
+  name?: string;
+  description?: string;
+  /** Legacy single photo URL (optional). */
+  photo_url?: string | null;
+  /** Up to 3 photo URLs for POI card gallery (from /api/place-photo). */
+  photo_urls?: string[];
+  /** Up to 3 photo_reference strings (old Places API) for gallery when from Text Search. */
+  photoRefs?: string[];
+}
+
+export interface RouteResult {
+  coordinates: [number, number][];
+  duration: number;
+  distance: number;
+  summary: string;
+  score: number;
+  breakdown: {
+    noise: number;
+    green: number;
+    clean: number;
+    cultural: number;
+  };
+  highlights?: RouteHighlight[];
+}
+
+export interface PlaceOption {
+  name: string;
+  /** Short descriptor for the card (replaces address). */
+  description: string | null;
+  lat: number;
+  lng: number;
+  rating: number | null;
+  summary: string | null;
+  photo_url: string | null;
+  /** Optional gallery of photo URLs for place card (falls back to photo_url if absent). */
+  photo_urls?: string[];
+  /** Google Places primaryType (e.g. restaurant, cafe) — used to default to fastest route for establishments. */
+  primary_type?: string | null;
+}
+
+export interface RoutesResponse {
+  recommended: RouteResult;
+  quick: RouteResult | null;
+  destination_name: string | null;
+  destination_address: string | null;
+  pattern: string;
+  /** Route intent for map polyline color (calm, nature, scenic, discover, lively, exercise, cafe, quick, themed_walk). */
+  intent?: string;
+  isLoop?: boolean;
+  place_options?: PlaceOption[];
+  end_point?: [number, number];
+  /** When true, recommended is the fastest route and the UI should show "Pleasant route" as the switch option. */
+  default_is_fastest?: boolean;
+  /** When true, recommended and quick are within ~1 min; client should hide the Switch. */
+  routes_are_similar?: boolean;
+}
+
+export interface DurationPromptResponse {
+  needs_duration: true;
+  intent: string;
+  message: string;
+  options: { label: string; value: number }[];
+  /** When true, client should skip the duration picker and use auto_duration. */
+  skip_duration?: boolean;
+  /** When skip_duration is true, use this duration (minutes) and call getRouteWithDuration immediately. */
+  auto_duration?: number;
+}
+
+export interface PlaceOptionsResponse {
+  place_options: PlaceOption[];
+  intent: Intent;
+}
+
+export interface RouteTypePromptResponse {
+  needs_route_type: true;
+  intent: string;
+  duration: number;
+  message: string;
+  options: { value: string; label: string }[];
+}
+
+export interface EdgeCaseResponse {
+  edge_case: true;
+  message: string;
+  suggestion?: string;
+  intent: string;
+  theme_name?: string;
+}
+
+export type RouteApiResponse = RoutesResponse | DurationPromptResponse | PlaceOptionsResponse | RouteTypePromptResponse | EdgeCaseResponse;
+
+export function isDurationPrompt(
+  data: RouteApiResponse
+): data is DurationPromptResponse {
+  return "needs_duration" in data && data.needs_duration === true;
+}
+
+export function isPlaceOptionsResponse(
+  data: RouteApiResponse
+): data is PlaceOptionsResponse {
+  return "place_options" in data && Array.isArray((data as PlaceOptionsResponse).place_options) && (data as PlaceOptionsResponse).place_options.length > 0 && !("recommended" in data);
+}
+
+export function isRouteTypePrompt(
+  data: RouteApiResponse
+): data is RouteTypePromptResponse {
+  return "needs_route_type" in data && (data as RouteTypePromptResponse).needs_route_type === true;
+}
+
+export function isEdgeCaseResponse(
+  data: RouteApiResponse
+): data is EdgeCaseResponse {
+  return "edge_case" in data && (data as EdgeCaseResponse).edge_case === true;
+}
+
+const ROUTE_NOT_FOUND_MSG = "Couldn't find a walkable route — try a closer destination.";
+
+export async function getRoute(
+  origin: [number, number],
+  moodText: string,
+  options?: { signal?: AbortSignal }
+): Promise<RouteApiResponse> {
+  const body = {
+    origin,
+    moodText: moodText.trim(),
+  };
+  const res = await fetch("/api/route", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: options?.signal,
+  });
+
+  if (!res.ok) {
+    if (res.status === 400) throw new Error(ROUTE_NOT_FOUND_MSG);
+    const err = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(err.error || `Route API error: ${res.status}`);
+  }
+
+  const data = await res.json();
+  if (data.edge_case === true) {
+    return {
+      edge_case: true,
+      message: data.message ?? "",
+      suggestion: data.suggestion,
+      intent: data.intent ?? "calm",
+      theme_name: data.theme_name,
+    } as EdgeCaseResponse;
+  }
+  if (data.needs_duration === true) {
+    const defaultOptions = [
+      { label: "5-15 min", value: 10 },
+      { label: "15-30 min", value: 22 },
+      { label: "30 min - 1 hr", value: 45 },
+      { label: "Surprise me", value: 0 },
+    ];
+    return {
+      needs_duration: true,
+      intent: data.intent ?? "calm",
+      message: data.message ?? "How long do you want to walk?",
+      options: Array.isArray(data.options) ? data.options : defaultOptions,
+      skip_duration: data.skip_duration === true,
+      auto_duration: typeof data.auto_duration === "number" && Number.isFinite(data.auto_duration) ? data.auto_duration : undefined,
+    };
+  }
+  if (data.needs_place_selection === true && Array.isArray(data.place_options) && data.place_options.length > 0) {
+    return {
+      place_options: data.place_options,
+      intent: (data.intent as Intent) ?? "calm",
+    } as PlaceOptionsResponse;
+  }
+  if (!data.recommended?.coordinates?.length) throw new Error(ROUTE_NOT_FOUND_MSG);
+  return {
+    recommended: data.recommended,
+    quick: data.quick,
+    destination_name: data.destination_name ?? null,
+    destination_address: data.destination_address ?? null,
+    pattern: data.pattern ?? "mood_only",
+    intent: data.intent ?? undefined,
+    isLoop: data.isLoop ?? false,
+    place_options: Array.isArray(data.place_options) ? data.place_options : undefined,
+  };
+}
+
+export async function getRouteWithDuration(
+  origin: [number, number],
+  moodText: string,
+  durationMinutes: number,
+  options?: { signal?: AbortSignal }
+): Promise<RoutesResponse> {
+  const body = {
+    origin,
+    moodText: moodText.trim(),
+    duration: durationMinutes,
+  };
+
+  const res = await fetch("/api/route", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: options?.signal,
+  });
+
+  if (!res.ok) {
+    if (res.status === 400) throw new Error(ROUTE_NOT_FOUND_MSG);
+    const err = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(err.error || `Route API error: ${res.status}`);
+  }
+
+  const data = await res.json();
+  if (data.needs_duration === true) {
+    throw new Error("Expected route response, got duration prompt");
+  }
+  if (!data.recommended?.coordinates?.length) throw new Error(ROUTE_NOT_FOUND_MSG);
+  return {
+    recommended: data.recommended,
+    quick: data.quick,
+    destination_name: data.destination_name ?? null,
+    destination_address: data.destination_address ?? null,
+    pattern: data.pattern ?? "mood_only",
+    intent: data.intent ?? undefined,
+    place_options: Array.isArray(data.place_options) ? data.place_options : undefined,
+    end_point: Array.isArray(data.end_point) && data.end_point.length >= 2 ? [Number(data.end_point[0]), Number(data.end_point[1])] : undefined,
+  };
+}
+
+export async function getRouteWithDestination(
+  origin: [number, number],
+  destination: [number, number],
+  intent: Intent,
+  options?: { destination_name?: string; destination_address?: string; destination_place_type?: string | null; signal?: AbortSignal }
+): Promise<RoutesResponse> {
+  const res = await fetch("/api/route", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      origin,
+      destination,
+      intent,
+      moodText: null,
+      destination_name: options?.destination_name ?? null,
+      destination_address: options?.destination_address ?? null,
+      destination_place_type: options?.destination_place_type ?? null,
+    }),
+    signal: options?.signal,
+  });
+
+  if (!res.ok) {
+    if (res.status === 400) throw new Error(ROUTE_NOT_FOUND_MSG);
+    const err = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(err.error || `Route API error: ${res.status}`);
+  }
+
+  const data = await res.json();
+  if (data.needs_duration === true) {
+    throw new Error("Expected route response, got duration prompt");
+  }
+  if (!data.recommended?.coordinates?.length) throw new Error(ROUTE_NOT_FOUND_MSG);
+  return {
+    recommended: data.recommended,
+    quick: data.quick,
+    destination_name: data.destination_name ?? null,
+    destination_address: data.destination_address ?? null,
+    pattern: data.pattern ?? "mood_only",
+    intent: data.intent ?? undefined,
+    isLoop: data.isLoop ?? false,
+    place_options: Array.isArray(data.place_options) ? data.place_options : undefined,
+    default_is_fastest: data.default_is_fastest === true,
+  };
+}
