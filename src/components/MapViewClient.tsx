@@ -293,9 +293,9 @@ const NAV_POI_ICON = L.divIcon({
 /** Navigation mode: end marker — white square with dark outline. */
 const NAV_END_SQUARE_ICON = L.divIcon({
   className: "",
-  html: `<div style="width:10px;height:10px;background:#ffffff;border:2px solid #1a1a1a;"></div>`,
-  iconSize: [10, 10],
-  iconAnchor: [5, 5],
+  html: `<div style="width:16px;height:16px;background:#ffffff;border:2.5px solid #1a1a1a;"></div>`,
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
 });
 
 /** Navigation mode: POI passed (seen) — green check. */
@@ -377,7 +377,7 @@ export default function MapViewClient({
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
   const [seenPoiKeys, setSeenPoiKeys] = useState<Set<string>>(() => new Set());
-  const [toastPoi, setToastPoi] = useState<{ name: string; description?: string } | null>(null);
+  const [toastPoi, setToastPoi] = useState<{ name: string; description?: string; placeId?: string; photoRef?: string | null; type?: string } | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [selectedHighlight, setSelectedHighlight] = useState<RouteHighlight | null>(null);
@@ -417,6 +417,9 @@ export default function MapViewClient({
         setToastPoi({
           name: h.name ?? h.label,
           description: h.description,
+          placeId: (h as RouteHighlight).placeId,
+          photoRef: (h as RouteHighlight).photoRef,
+          type: h.type,
         });
         break;
       }
@@ -488,34 +491,47 @@ export default function MapViewClient({
       )}
       {isNavigating && toastPoi && (
         <div
-          className="fixed bottom-4 left-4 right-4 bg-white rounded-lg shadow-lg p-3 flex items-center gap-3 animate-slide-up z-[250]"
+          className="fixed bottom-4 left-4 right-4 bg-white rounded-lg shadow-lg overflow-hidden animate-slide-up z-[250]"
           style={{ boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}
           role="status"
           aria-live="polite"
         >
-          <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-500 flex-shrink-0 text-base">
-            📍
+          {toastPoi.placeId ? (
+            <img
+              src={`/api/place-photo?name=places/${encodeURIComponent(toastPoi.placeId)}/photos/default`}
+              alt={toastPoi.name}
+              className="w-full h-28 object-cover"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <div className="w-full h-28 bg-gray-100 flex items-center justify-center">
+              <span className="font-mono text-xs text-gray-400">📍 {toastPoi.type ?? "POI"}</span>
+            </div>
+          )}
+          <div className="p-3 flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="font-mono font-bold text-sm truncate text-gray-900">{toastPoi.name}</p>
+              {toastPoi.description ? (
+                <p className="font-mono text-xs text-gray-500 line-clamp-2 mt-0.5">{toastPoi.description}</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setToastPoi(null);
+                if (toastTimeoutRef.current) {
+                  clearTimeout(toastTimeoutRef.current);
+                  toastTimeoutRef.current = null;
+                }
+              }}
+              className="font-mono text-gray-400 hover:text-gray-600 text-sm flex-shrink-0"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-sm truncate text-gray-900">{toastPoi.name}</p>
-            {toastPoi.description ? (
-              <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{toastPoi.description}</p>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setToastPoi(null);
-              if (toastTimeoutRef.current) {
-                clearTimeout(toastTimeoutRef.current);
-                toastTimeoutRef.current = null;
-              }
-            }}
-            className="text-gray-400 hover:text-gray-600 text-sm p-1 shrink-0"
-            aria-label="Dismiss"
-          >
-            ✕
-          </button>
         </div>
       )}
       <MapContainer
@@ -611,7 +627,18 @@ export default function MapViewClient({
             }
             eventHandlers={
               isNavigating
-                ? undefined
+                ? {
+                    click: (e) => {
+                      L.DomEvent.stopPropagation(e);
+                      setToastPoi({
+                        name: h.name ?? h.label ?? "",
+                        description: h.description,
+                        placeId: (h as RouteHighlight).placeId,
+                        photoRef: (h as RouteHighlight).photoRef,
+                        type: h.type,
+                      });
+                    },
+                  }
                 : {
                     click: (e) => {
                       L.DomEvent.stopPropagation(e);
@@ -637,7 +664,7 @@ export default function MapViewClient({
             <Popup>Start of walk</Popup>
           </Marker>
         )}
-        {endPoint && endPoint.length >= 2 && (
+        {endPoint && endPoint.length >= 2 && !isNavigating && (
           <Marker
             position={[endPoint[0], endPoint[1]]}
             icon={END_POINT_ICON}

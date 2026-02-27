@@ -13,6 +13,10 @@ export interface RouteHighlight {
   photo_urls?: string[];
   /** Up to 3 photo_reference strings (old Places API) for gallery when from Text Search. */
   photoRefs?: string[];
+  /** Google Place ID for fetching photos (e.g. ChIJ...). */
+  placeId?: string;
+  /** Single photo reference (optional). */
+  photoRef?: string | null;
 }
 
 export interface RouteResult {

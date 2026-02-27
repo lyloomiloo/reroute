@@ -571,23 +571,29 @@ function PageContent() {
                     label: "Mercat de la Boqueria",
                     type: "market",
                     name: "Mercat de la Boqueria",
-                    description: "Historic market, fresh produce",
+                    description: "Historic market, fresh produce since 1217",
+                    placeId: "ChIJE0iRRQmipBIRRMbSqM3VDwQ",
+                    photoRef: null as string | null,
                   },
                   {
                     lat: fakeLat + 0.002,
                     lng: fakeLng + 0.003,
-                    label: "Plaça Reial",
+                    label: "Basilica de Santa Maria del Mar",
                     type: "landmark",
-                    name: "Plaça Reial",
-                    description: "Beautiful square with palm trees",
+                    name: "Basilica de Santa Maria del Mar",
+                    description: "Stunning 14th-century Gothic church",
+                    placeId: "ChIJo8VKtHujpBIRBWdWNFW7yts",
+                    photoRef: null as string | null,
                   },
                   {
                     lat: fakeLat + 0.0015,
                     lng: fakeLng + 0.002,
-                    label: "Café El Magnífico",
+                    label: "El Magnífico",
                     type: "cafe",
-                    name: "Café El Magnífico",
-                    description: "Specialty roasters since 1919",
+                    name: "El Magnífico",
+                    description: "Specialty coffee roasters since 1919",
+                    placeId: "ChIJPeByD_6ipBIRS6hspV6vfyc",
+                    photoRef: null as string | null,
                   },
                   {
                     lat: endPoint[0],
@@ -693,7 +699,7 @@ function PageContent() {
                     const active = routes.quick && showQuick ? routes.quick : routes.recommended;
                     return (
                       <>
-                        <p className="text-sm text-foreground reroute-uppercase font-medium pr-10">{active.summary}</p>
+                        <p className="text-sm text-foreground reroute-uppercase font-bold pr-10">{active.summary}</p>
                         {routes.destination_name && (
                           <p className="text-xs text-gray-600 mt-1 reroute-uppercase">
                             {routes.pattern === "mood_and_area"
@@ -704,7 +710,7 @@ function PageContent() {
                         <p className="text-xs text-gray-500 mt-1 reroute-uppercase">
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
                         </p>
-                        <p className="font-mono font-normal text-[11px] tracking-wide text-[#4A90D9] mt-1">
+                        <p className="font-mono font-bold text-[11px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
                         <div className="mt-3 pt-3 border-t border-gray-100">
@@ -770,7 +776,7 @@ function PageContent() {
               }`}
             >
               <h1
-                className="font-normal text-xl tracking-tight text-black reroute-uppercase leading-tight line-clamp-2"
+                className="font-mono font-normal text-xl tracking-tight text-black reroute-uppercase leading-tight line-clamp-2"
                 style={{ fontSize: "clamp(22px, 5.5vw, 36px)", letterSpacing: "-0.05em", wordSpacing: "-0.2em", lineHeight: 0.95 }}
               >
                 What are you in the mood for?
@@ -994,7 +1000,7 @@ function PageContent() {
               {placeOptions && placeOptions.length > 0 && (
                 <div className="px-4 py-3">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-mono font-normal text-base tracking-wide uppercase">
+                    <span className="font-serif font-normal text-base tracking-wide uppercase">
                       Choose a place
                     </span>
                     <button
