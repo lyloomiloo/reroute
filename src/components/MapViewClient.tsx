@@ -137,6 +137,7 @@ function PanToFocusedPlace({
 function NavigationMapController({
   isNavigating,
   userPosition,
+  initialNavCenter,
   autoFollow,
   onDragStart,
   routeCoordinates,
@@ -145,6 +146,7 @@ function NavigationMapController({
 }: {
   isNavigating: boolean;
   userPosition: { lat: number; lng: number } | null;
+  initialNavCenter?: [number, number];
   autoFollow: boolean;
   onDragStart: () => void;
   routeCoordinates?: [number, number][];
@@ -173,11 +175,14 @@ function NavigationMapController({
       return;
     }
     prevNavigatingRef.current = true;
-    if (!userPosition) return;
-    const { lat, lng } = userPosition;
+    const latLng = userPosition
+      ? [userPosition.lat, userPosition.lng]
+      : initialNavCenter;
+    if (!latLng) return;
+    const [lat, lng] = latLng;
     console.log("[nav] Flying to zoom 18:", lat, lng);
-    map.flyTo([lat, lng], 18, { animate: true, duration: 1.5 });
-  }, [isNavigating, map, userPosition]);
+    map.flyTo([lat, lng], 18, { animate: true, duration: 1 });
+  }, [isNavigating, map, userPosition, initialNavCenter]);
   useEffect(() => {
     if (!isNavigating || !userPosition || !autoFollow) return;
     map.panTo([userPosition.lat, userPosition.lng], { animate: true, duration: 0.5 });
@@ -246,11 +251,11 @@ const USER_LOCATION_ICON = L.divIcon({
 function getNavigationArrowIcon(heading: number): L.DivIcon {
   return L.divIcon({
     className: "",
-    html: `<svg width="24" height="24" viewBox="0 0 24 24" style="transform:rotate(${heading}deg)">
-    <polygon points="12,2 2,22 22,22" fill="white" stroke="#1a1a1a" stroke-width="2"/>
+    html: `<svg width="28" height="36" viewBox="0 0 28 36" style="transform:rotate(${heading}deg)">
+    <polygon points="14,0 3,36 14,28 25,36" fill="white" stroke="#1a1a1a" stroke-width="2" stroke-linejoin="round"/>
   </svg>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    iconSize: [28, 36],
+    iconAnchor: [14, 18],
   });
 }
 
@@ -345,6 +350,8 @@ interface MapViewClientProps {
   isNavigating?: boolean;
   /** Called when user exits navigation. */
   onExitNavigation?: () => void;
+  /** [lat, lng] to fly to immediately when entering nav (e.g. origin at Let's go click). */
+  initialNavCenter?: [number, number];
 }
 
 export default function MapViewClient({
@@ -365,6 +372,7 @@ export default function MapViewClient({
   onPlaceSelect,
   isNavigating = false,
   onExitNavigation,
+  initialNavCenter,
 }: MapViewClientProps) {
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -526,6 +534,7 @@ export default function MapViewClient({
         <NavigationMapController
           isNavigating={isNavigating}
           userPosition={userPosition}
+          initialNavCenter={initialNavCenter}
           autoFollow={autoFollow}
           onDragStart={() => {
             setAutoFollow(false);
@@ -556,24 +565,24 @@ export default function MapViewClient({
             />
           </>
         ) : null}
-        {isNavigating && routeCoordinates && routeCoordinates.length >= 2 && (
+        {routeCoordinates && routeCoordinates.length >= 2 && (
           <>
-            <CircleMarker
-              center={[routeCoordinates[0][1], routeCoordinates[0][0]]}
-              radius={5}
-              pathOptions={{
-                fillColor: "#ffffff",
-                color: "#1a1a1a",
-                weight: 2,
-                fillOpacity: 1,
-              }}
-            >
-              {!isNavigating && (
+            {!isNavigating && (
+              <CircleMarker
+                center={[routeCoordinates[0][1], routeCoordinates[0][0]]}
+                radius={5}
+                pathOptions={{
+                  fillColor: "#ffffff",
+                  color: "#1a1a1a",
+                  weight: 2,
+                  fillOpacity: 1,
+                }}
+              >
                 <Tooltip permanent direction="top" className="font-mono text-[10px]">
                   START
                 </Tooltip>
-              )}
-            </CircleMarker>
+              </CircleMarker>
+            )}
             <Marker
               position={[routeCoordinates[routeCoordinates.length - 1][1], routeCoordinates[routeCoordinates.length - 1][0]]}
               icon={NAV_END_SQUARE_ICON}
@@ -619,7 +628,7 @@ export default function MapViewClient({
             zIndexOffset={-100}
           />
         )}
-        {routeCoordinates?.length && (
+        {routeCoordinates?.length && !isNavigating && (
           <Marker
             position={[routeCoordinates[0][1], routeCoordinates[0][0]]}
             icon={START_POINT_ICON}

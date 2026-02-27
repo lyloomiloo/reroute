@@ -31,6 +31,8 @@ interface MapViewProps {
   isNavigating?: boolean;
   /** Called when user exits navigation (e.g. X button). */
   onExitNavigation?: () => void;
+  /** [lat, lng] to fly to immediately when entering nav (e.g. origin at Let's go click). */
+  initialNavCenter?: [number, number];
 }
 
 export default function MapView({
@@ -51,6 +53,7 @@ export default function MapView({
   onPlaceSelect,
   isNavigating = false,
   onExitNavigation,
+  initialNavCenter,
 }: MapViewProps) {
   return (
     <div className="absolute inset-0" style={{ zIndex: 1 }}>
@@ -72,6 +75,7 @@ export default function MapView({
         onPlaceSelect={onPlaceSelect}
         isNavigating={isNavigating}
         onExitNavigation={onExitNavigation}
+        initialNavCenter={initialNavCenter}
       />
     </div>
   );

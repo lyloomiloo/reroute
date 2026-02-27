@@ -656,24 +656,24 @@ function PageContent() {
               onPlaceSelect={placeOptions?.length ? handleRouteToPlace : undefined}
               isNavigating={isNavigating}
               onExitNavigation={() => setIsNavigating(false)}
+              initialNavCenter={routes ? origin : undefined}
             />
             {isNavigating && routes && (
-              <div className="absolute top-0 left-0 right-0 z-[100] flex items-center justify-between gap-2 bg-white/95 backdrop-blur px-4 py-2.5 border-b border-gray-100">
-                <div className="min-w-0 flex-1">
-                  <p className="font-mono font-bold text-base text-gray-900 truncate">
-                    {destinationName ?? routes.destination_name ?? "Walk"}
-                  </p>
-                  <p className="font-mono font-medium text-sm text-gray-500">
-                    ~{formatDuration((showQuick && routes.quick ? routes.quick : routes.recommended).duration)} left
+              <div className="absolute top-0 left-0 right-0 flex-shrink-0 bg-white px-4 py-3 border-b border-gray-200 flex justify-between items-center z-[100]">
+                <div>
+                  <p className="font-mono text-xs text-gray-400">FROM: {customStart?.name ?? "Current Location"}</p>
+                  <p className="font-mono font-bold text-sm truncate">{destinationName ?? routes.destination_name ?? "Walk"}</p>
+                  <p className="font-mono text-xs text-gray-400">
+                    ~{formatDuration((showQuick && routes.quick ? routes.quick : routes.recommended).duration)} left · {formatDistance((showQuick && routes.quick ? routes.quick : routes.recommended).distance)}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsNavigating(false)}
-                  className="shrink-0 w-8 h-8 flex items-center justify-center text-gray-500 hover:text-black font-mono text-lg border border-gray-200 rounded"
+                  className="font-mono text-lg px-2"
                   aria-label="Exit navigation"
                 >
-                  ×
+                  ✕
                 </button>
               </div>
             )}
@@ -704,7 +704,7 @@ function PageContent() {
                         <p className="text-xs text-gray-500 mt-1 reroute-uppercase">
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
                         </p>
-                        <p className="font-mono font-bold text-[11px] tracking-wide text-gray-400 mt-1">
+                        <p className="font-mono font-normal text-[11px] tracking-wide text-[#4A90D9] mt-1">
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
                         <div className="mt-3 pt-3 border-t border-gray-100">
@@ -770,7 +770,7 @@ function PageContent() {
               }`}
             >
               <h1
-                className="font-mono font-normal text-xl tracking-tight text-black reroute-uppercase leading-tight line-clamp-2"
+                className="font-normal text-xl tracking-tight text-black reroute-uppercase leading-tight line-clamp-2"
                 style={{ fontSize: "clamp(22px, 5.5vw, 36px)", letterSpacing: "-0.05em", wordSpacing: "-0.2em", lineHeight: 0.95 }}
               >
                 What are you in the mood for?
@@ -994,7 +994,7 @@ function PageContent() {
               {placeOptions && placeOptions.length > 0 && (
                 <div className="px-4 py-3">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-mono font-black text-base tracking-wide uppercase">
+                    <span className="font-mono font-normal text-base tracking-wide uppercase">
                       Choose a place
                     </span>
                     <button
@@ -1077,7 +1077,7 @@ function PageContent() {
                               <button
                                 type="button"
                                 onClick={() => handleRouteToPlace(place)}
-                                className="bg-black text-white font-mono font-black text-sm px-4 py-2 rounded flex-shrink-0 hover:opacity-90"
+                                className="bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded flex-shrink-0 hover:opacity-90"
                               >
                                 GO
                               </button>
