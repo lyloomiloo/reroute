@@ -170,7 +170,7 @@ function NavigationMapController({
     }
     prevNavigatingRef.current = true;
     if (!userPosition) return;
-    map.flyTo([userPosition.lat, userPosition.lng], 17, { animate: true, duration: 1.5 });
+    map.flyTo([userPosition.lat, userPosition.lng], 18, { animate: true, duration: 1.5 });
   }, [isNavigating, map]);
   useEffect(() => {
     if (!isNavigating || !userPosition || !autoFollow) return;
@@ -568,18 +568,22 @@ export default function MapViewClient({
                 fillOpacity: 1,
               }}
             >
-              <Tooltip permanent direction="top" className="font-mono text-[10px]">
-                START
-              </Tooltip>
+              {!isNavigating && (
+                <Tooltip permanent direction="top" className="font-mono text-[10px]">
+                  START
+                </Tooltip>
+              )}
             </CircleMarker>
             <Marker
               position={[routeCoordinates[routeCoordinates.length - 1][1], routeCoordinates[routeCoordinates.length - 1][0]]}
               icon={NAV_END_SQUARE_ICON}
               zIndexOffset={60}
             >
-              <Tooltip permanent direction="top" className="font-mono text-[10px]">
-                END
-              </Tooltip>
+              {!isNavigating && (
+                <Tooltip permanent direction="top" className="font-mono text-[10px]">
+                  END
+                </Tooltip>
+              )}
             </Marker>
           </>
         )}
