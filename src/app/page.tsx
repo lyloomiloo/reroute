@@ -707,6 +707,7 @@ function PageContent() {
                   onBlur={() => {
                     setMoodInputFocused(false);
                     setTimeout(() => setInputFocused(false), 200);
+                    window.scrollTo(0, 0);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
