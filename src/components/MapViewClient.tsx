@@ -514,7 +514,7 @@ export default function MapViewClient({
             <div className="flex-1 min-w-0">
               <p className="font-mono font-bold text-sm truncate text-gray-900">{toastPoi.name}</p>
               {toastPoi.description ? (
-                <p className="font-mono text-xs text-gray-500 line-clamp-2 mt-0.5">{toastPoi.description}</p>
+                <p className="font-mono text-sm text-gray-500 line-clamp-2 mt-0.5">{toastPoi.description}</p>
               ) : null}
             </div>
             <button
@@ -767,7 +767,7 @@ export default function MapViewClient({
               {selectedHighlight.name ?? selectedHighlight.label}
             </p>
             {selectedHighlight.description && (
-              <p className="mt-2 font-mono text-xs text-gray-600 whitespace-normal">
+              <p className="mt-2 font-mono text-sm text-gray-600 whitespace-normal">
                 {selectedHighlight.description}
               </p>
             )}

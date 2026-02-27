@@ -546,8 +546,28 @@ function PageContent() {
               </div>
             </div>
           )}
-          {/* Map fills remaining space; route results overlay at bottom */}
+          {/* Map fills remaining space; nav bar above map when navigating */}
           <div className="flex-1 relative overflow-hidden flex flex-col min-h-0 bg-[#f0f0f0]">
+            {isNavigating && routes && (
+              <div className="flex-shrink-0 bg-white px-4 py-2 border-b border-gray-100 flex justify-between items-start z-[1000]">
+                <div className="min-w-0 flex-1">
+                  <p className="font-mono text-xs text-gray-400">FROM: {customStart?.name ?? "Current Location"}</p>
+                  <p className="font-mono font-bold text-sm truncate">{destinationName ?? routes.destination_name ?? "Walk"}</p>
+                  <p className="font-mono text-xs text-gray-400">
+                    ~{formatDuration((showQuick && routes.quick ? routes.quick : routes.recommended).duration)} left · {formatDistance((showQuick && routes.quick ? routes.quick : routes.recommended).distance)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsNavigating(false)}
+                  className="font-mono text-lg mt-1 flex-shrink-0"
+                  aria-label="Exit navigation"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            <div className="flex-1 relative min-h-0">
             {/* TEMP: Remove before deploy */}
             <button
               type="button"
@@ -664,25 +684,6 @@ function PageContent() {
               onExitNavigation={() => setIsNavigating(false)}
               initialNavCenter={routes ? origin : undefined}
             />
-            {isNavigating && routes && (
-              <div className="absolute top-0 left-0 right-0 flex-shrink-0 bg-white px-4 py-3 border-b border-gray-200 flex justify-between items-center z-[100]">
-                <div>
-                  <p className="font-mono text-xs text-gray-400">FROM: {customStart?.name ?? "Current Location"}</p>
-                  <p className="font-mono font-bold text-sm truncate">{destinationName ?? routes.destination_name ?? "Walk"}</p>
-                  <p className="font-mono text-xs text-gray-400">
-                    ~{formatDuration((showQuick && routes.quick ? routes.quick : routes.recommended).duration)} left · {formatDistance((showQuick && routes.quick ? routes.quick : routes.recommended).distance)}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsNavigating(false)}
-                  className="font-mono text-lg px-2"
-                  aria-label="Exit navigation"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
             {routes && !isNavigating && (
               <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-4 pt-4 pb-6 z-[100]">
                 <div className="max-w-md mx-auto relative">
@@ -701,16 +702,16 @@ function PageContent() {
                       <>
                         <p className="text-sm text-foreground reroute-uppercase font-bold pr-10">{active.summary}</p>
                         {routes.destination_name && (
-                          <p className="text-xs text-gray-600 mt-1 reroute-uppercase">
+                          <p className="text-sm text-gray-600 mt-1 reroute-uppercase">
                             {routes.pattern === "mood_and_area"
                               ? `WALK IN ${routes.destination_name}`
                               : `→ ${routes.destination_name}`}
                           </p>
                         )}
-                        <p className="text-xs text-gray-500 mt-1 reroute-uppercase">
+                        <p className="text-sm text-gray-500 mt-1 reroute-uppercase">
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
                         </p>
-                        <p className="font-mono font-bold text-[11px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
+                        <p className="font-mono font-bold text-[13px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
                         <div className="mt-3 pt-3 border-t border-gray-100">
@@ -719,12 +720,12 @@ function PageContent() {
                                 <button
                                   type="button"
                                   onClick={() => setShowQuick(false)}
-                                  className="text-xs text-gray-600 underline reroute-uppercase"
+                                  className="text-sm text-gray-600 underline reroute-uppercase"
                                 >
                                   {routes.default_is_fastest ? "Use fastest route" : getUseRouteLabel(routes.intent)}
                                 </button>
                               ) : (
-                                <p className="text-xs text-gray-500 reroute-uppercase">
+                                <p className="text-sm text-gray-500 reroute-uppercase">
                                   {routes.default_is_fastest
                                     ? `${getIntentRouteLabel(routes.intent)}: ${formatDuration(routes.quick.duration)} — `
                                     : `Fastest route: ${formatDuration(routes.quick.duration)} — `}
@@ -764,6 +765,7 @@ function PageContent() {
                 </div>
               </div>
             )}
+            </div>
           </div>
 
           {/* BOTTOM: Input section — hidden during navigation */}
@@ -777,7 +779,7 @@ function PageContent() {
             >
               <h1
                 className="font-mono font-normal text-xl tracking-tight text-black reroute-uppercase leading-tight line-clamp-2"
-                style={{ fontSize: "clamp(22px, 5.5vw, 36px)", letterSpacing: "-0.05em", wordSpacing: "-0.2em", lineHeight: 0.95 }}
+                style={{ fontSize: "clamp(23px, 5.67vw, 37px)", letterSpacing: "-0.05em", wordSpacing: "-0.2em", lineHeight: 0.95 }}
               >
                 What are you in the mood for?
               </h1>
@@ -898,12 +900,12 @@ function PageContent() {
                 </button>
               ) : (
                 <>
-                  <div className="flex items-center gap-1.5 flex-wrap text-[#4A90D9]/70 text-[10px]">
-                    <span className="reroute-uppercase tracking-wider shrink-0">From:</span>
+                  <div className="flex items-center gap-1.5 flex-wrap font-mono text-xs font-normal tracking-wide text-[#4A90D9]/70">
+                    <span className="reroute-uppercase shrink-0">From:</span>
             <input
                       type="text"
                       placeholder="e.g. Plaça Catalunya"
-                      className="flex-1 min-w-[120px] bg-transparent border-0 border-b border-[#4A90D9]/80 py-1 pr-1 text-[10px] text-[#4A90D9]/80 placeholder:text-[#4A90D9]/70 focus:outline-none focus:border-[#4A90D9] font-mono"
+                      className="flex-1 min-w-[120px] bg-transparent border-0 border-b border-[#4A90D9]/80 py-1 pr-1 text-xs text-[#4A90D9]/80 placeholder:text-[#4A90D9]/70 focus:outline-none focus:border-[#4A90D9] font-mono"
                       value={startPointInput}
                       onChange={(e) => setStartPointInput(e.target.value)}
                       onFocus={() => setStartInputFocused(true)}
@@ -918,14 +920,14 @@ function PageContent() {
                       type="button"
                       onClick={handleSetStartPoint}
                       disabled={startPointGeocoding || !startPointInput.trim()}
-                      className="shrink-0 text-[10px] hover:text-[#4A90D9] disabled:opacity-40 reroute-uppercase"
+                      className="shrink-0 font-mono text-xs hover:text-[#4A90D9] disabled:opacity-40 reroute-uppercase"
                     >
                       {startPointGeocoding ? "…" : "Set"}
                     </button>
                     <button
                       type="button"
                       onClick={() => setStartPointExpanded(false)}
-                      className="shrink-0 hover:text-[#4A90D9] text-[10px] leading-none p-0.5"
+                      className="shrink-0 font-mono text-xs hover:text-[#4A90D9] leading-none p-0.5"
                       aria-label="Cancel"
                     >
                       ×
@@ -1012,7 +1014,7 @@ function PageContent() {
                       ✕
                     </button>
                   </div>
-                  <p className="font-mono font-bold text-[11px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
+                  <p className="font-mono font-bold text-[13px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
                     BETA · RESULTS MAY NOT BE PERFECT · CHECK REVIEWS
                   </p>
 
@@ -1071,12 +1073,12 @@ function PageContent() {
                             </div>
                             <div className="flex items-end gap-2 mt-1 flex-1">
                               <div className="flex-1 min-w-0">
-                                <div className="text-xs text-gray-400">
+                                <div className="text-sm text-gray-400">
                                   {place.rating != null && (
                                     <span>{place.rating.toFixed(1)} ★ · </span>
                                   )}
                                 </div>
-                                <div className="font-mono font-medium text-xs text-gray-500 line-clamp-2">
+                                <div className="font-mono font-medium text-sm text-gray-500 line-clamp-2">
                                   {place.description ? place.description.replace(/\.$/, "") : null}
                                 </div>
                               </div>
