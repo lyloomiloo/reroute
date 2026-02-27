@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, CircleMarker, useMap } from "react-leaflet";
 import L from "leaflet";
 import type { LatLngExpression } from "leaflet";
 import type { RouteHighlight, PlaceOption } from "@/lib/routing";
@@ -170,7 +170,7 @@ function NavigationMapController({
     }
     prevNavigatingRef.current = true;
     if (!userPosition) return;
-    map.flyTo([userPosition.lat, userPosition.lng], 17, { animate: true, duration: 0.5 });
+    map.flyTo([userPosition.lat, userPosition.lng], 17, { animate: true, duration: 1.5 });
   }, [isNavigating, map]);
   useEffect(() => {
     if (!isNavigating || !userPosition || !autoFollow) return;
@@ -239,17 +239,18 @@ const USER_LOCATION_ICON = L.divIcon({
 
 function getNavigationArrowIcon(heading: number): L.DivIcon {
   return L.divIcon({
-    className: "navigation-arrow",
+    className: "",
     html: `<div style="
-      width: 24px;
-      height: 24px;
-      background: #4A90D9;
-      clip-path: polygon(50% 0%, 0% 100%, 50% 75%, 100% 100%);
+      width: 0;
+      height: 0;
+      border-left: 14px solid transparent;
+      border-right: 14px solid transparent;
+      border-bottom: 28px solid #1a1a1a;
       transform: rotate(${heading}deg);
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+      filter: drop-shadow(0 0 0 #000);
     "></div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   });
 }
 
@@ -282,6 +283,14 @@ const NAV_POI_ICON = L.divIcon({
   className: "custom-pin-no-default",
   iconSize: [12, 12],
   iconAnchor: [6, 6],
+});
+
+/** Navigation mode: end marker — black square (brutalist). */
+const NAV_END_SQUARE_ICON = L.divIcon({
+  className: "",
+  html: `<div style="width:20px;height:20px;background:#1a1a1a;border:2px solid #fff;"></div>`,
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
 });
 
 /** Navigation mode: POI passed (seen) — green check. */
@@ -547,6 +556,34 @@ export default function MapViewClient({
             />
           </>
         ) : null}
+        {isNavigating && routeCoordinates && routeCoordinates.length >= 2 && (
+          <>
+            <CircleMarker
+              center={[routeCoordinates[0][1], routeCoordinates[0][0]]}
+              radius={8}
+              pathOptions={{
+                fillColor: "#22c55e",
+                color: "#fff",
+                weight: 2,
+                fillOpacity: 1,
+              }}
+              zIndexOffset={60}
+            >
+              <Tooltip permanent direction="top" className="font-mono text-[10px]">
+                START
+              </Tooltip>
+            </CircleMarker>
+            <Marker
+              position={[routeCoordinates[routeCoordinates.length - 1][1], routeCoordinates[routeCoordinates.length - 1][0]]}
+              icon={NAV_END_SQUARE_ICON}
+              zIndexOffset={60}
+            >
+              <Tooltip permanent direction="top" className="font-mono text-[10px]">
+                END
+              </Tooltip>
+            </Marker>
+          </>
+        )}
         {highlights?.map((h, i) => (
           <Marker
             key={i}

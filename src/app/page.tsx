@@ -566,12 +566,28 @@ function PageContent() {
                 const endPoint: [number, number] = [last[1], last[0]];
                 const fakeHighlights: RouteHighlight[] = [
                   {
+                    lat: fakeLat + 0.001,
+                    lng: fakeLng + 0.001,
+                    label: "Mercat de la Boqueria",
+                    type: "market",
+                    name: "Mercat de la Boqueria",
+                    description: "Historic market, fresh produce",
+                  },
+                  {
+                    lat: fakeLat + 0.002,
+                    lng: fakeLng + 0.003,
+                    label: "Plaça Reial",
+                    type: "landmark",
+                    name: "Plaça Reial",
+                    description: "Beautiful square with palm trees",
+                  },
+                  {
                     lat: fakeLat + 0.0015,
                     lng: fakeLng + 0.002,
-                    label: "Test POI near route",
-                    type: "poi",
-                    name: "Test POI near route",
-                    description: "Fake highlight for navigation proximity test",
+                    label: "Café El Magnífico",
+                    type: "cafe",
+                    name: "Café El Magnífico",
+                    description: "Specialty roasters since 1919",
                   },
                   {
                     lat: endPoint[0],
@@ -644,10 +660,10 @@ function PageContent() {
             {isNavigating && routes && (
               <div className="absolute top-0 left-0 right-0 z-[100] flex items-center justify-between gap-2 bg-white/95 backdrop-blur px-4 py-2.5 border-b border-gray-100">
                 <div className="min-w-0 flex-1">
-                  <p className="font-mono text-xs font-medium text-gray-900 truncate">
+                  <p className="font-mono font-bold text-base text-gray-900 truncate">
                     {destinationName ?? routes.destination_name ?? "Walk"}
                   </p>
-                  <p className="font-mono text-[10px] text-gray-500">
+                  <p className="font-mono font-medium text-sm text-gray-500">
                     ~{formatDuration((showQuick && routes.quick ? routes.quick : routes.recommended).duration)} left
                   </p>
                 </div>
@@ -688,8 +704,8 @@ function PageContent() {
                         <p className="text-xs text-gray-500 mt-1 reroute-uppercase">
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
                         </p>
-                        <p className="text-[10px] text-gray-400 mt-1 font-mono tracking-wide">
-                          (RE)ROUTE IS IN BETA AND MAY MAKE SOME ERRORS.
+                        <p className="font-mono font-bold text-[11px] tracking-wide text-gray-400 mt-1">
+                          (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
                         <div className="mt-3 pt-3 border-t border-gray-100">
                             {routes.quick && !routes.routes_are_similar && routes.pattern !== "mood_and_area" && (
@@ -754,7 +770,7 @@ function PageContent() {
               }`}
             >
               <h1
-                className="font-mono font-bold text-lg text-black reroute-uppercase leading-tight line-clamp-2"
+                className="font-mono font-black text-xl tracking-tight text-black reroute-uppercase leading-tight line-clamp-2"
                 style={{ fontSize: "clamp(22px, 5.5vw, 36px)", letterSpacing: "-0.05em", wordSpacing: "-0.2em", lineHeight: 0.95 }}
               >
                 What are you in the mood for?
@@ -766,7 +782,7 @@ function PageContent() {
                   ref={moodInputRef}
                   type="text"
                   placeholder="Type your vibe..."
-                  className="w-full bg-transparent border-0 border-b border-gray-300 py-2 pr-8 text-sm font-normal text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-black transition-colors"
+                  className="w-full bg-transparent border-0 border-b border-gray-300 py-2 pr-8 font-mono text-base font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-black transition-colors"
                   value={moodInput}
                   onChange={(e) => setMoodInput(e.target.value)}
                   onPointerDown={() => {
@@ -819,7 +835,7 @@ function PageContent() {
                 →
               </button>
             </div>
-            <p className="mt-1 text-[10px] text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis" style={{ letterSpacing: "-0.02em" }} aria-hidden>
+            <p className="mt-1 font-mono text-sm font-medium text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis" style={{ letterSpacing: "-0.02em" }} aria-hidden>
               e.g. calm walk by the beach, architecture hunt in Eixample.
             </p>
             {routeError && (
@@ -842,7 +858,7 @@ function PageContent() {
                     setPlaceOptions(null);
                     setPlaceOptionsShownCount(5);
                   }}
-                  className="group inline-flex items-center gap-1.5 py-0.5 text-[10px] text-blue-600/70 hover:text-blue-500 hover:font-bold reroute-uppercase tracking-wider whitespace-nowrap"
+                  className="group inline-flex items-center gap-1.5 py-0.5 font-mono text-sm font-bold tracking-wide text-blue-600/70 hover:text-blue-500 reroute-uppercase whitespace-nowrap"
                   aria-expanded={false}
                   aria-label={customStart ? "Starting point" : "Change starting point"}
                 >
@@ -978,7 +994,7 @@ function PageContent() {
               {placeOptions && placeOptions.length > 0 && (
                 <div className="px-4 py-3">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-mono text-xs font-bold tracking-wider uppercase">
+                    <span className="font-mono font-black text-base tracking-wide uppercase">
                       Choose a place
                     </span>
                     <button
@@ -990,7 +1006,7 @@ function PageContent() {
                       ✕
                     </button>
                   </div>
-                  <p className="text-[10px] text-blue-400 mt-0.5 mb-2 font-mono tracking-wide">
+                  <p className="font-mono font-bold text-[11px] tracking-wide text-blue-400 mt-0.5 mb-2">
                     BETA · RESULTS MAY NOT BE PERFECT · CHECK REVIEWS
                   </p>
 
@@ -1044,7 +1060,7 @@ function PageContent() {
                           )}
 
                           <div className="flex flex-col flex-1 p-3">
-                            <div className="font-bold text-sm truncate">
+                            <div className="font-mono font-bold text-sm truncate">
                               {place.name}
                             </div>
                             <div className="flex items-end gap-2 mt-1 flex-1">
@@ -1054,14 +1070,14 @@ function PageContent() {
                                     <span>{place.rating.toFixed(1)} ★ · </span>
                                   )}
                                 </div>
-                                <div className="text-xs text-gray-500 line-clamp-2">
+                                <div className="font-mono font-medium text-xs text-gray-500 line-clamp-2">
                                   {place.description ? place.description.replace(/\.$/, "") : null}
                                 </div>
                               </div>
                               <button
                                 type="button"
                                 onClick={() => handleRouteToPlace(place)}
-                                className="bg-black text-white text-xs font-bold px-4 py-2 rounded flex-shrink-0 hover:opacity-90"
+                                className="bg-black text-white font-mono font-black text-sm px-4 py-2 rounded flex-shrink-0 hover:opacity-90"
                               >
                                 GO
                               </button>
