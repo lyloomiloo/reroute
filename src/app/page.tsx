@@ -114,6 +114,8 @@ function PageContent() {
   const [time, setTime] = useState(new Date());
   const [colonVisible, setColonVisible] = useState(true);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [remainingDistance, setRemainingDistance] = useState<string>("—");
+  const [remainingTime, setRemainingTime] = useState<string>("—");
   const moodInputRef = useRef<HTMLInputElement | null>(null);
 
   const ROUTE_TIMEOUT_MS = 30000;
@@ -554,7 +556,7 @@ function PageContent() {
                   <p className="font-mono text-sm text-gray-400">FROM: {customStart?.name ?? "Current Location"}</p>
                   <p className="font-mono font-bold text-base truncate">{destinationName ?? routes.destination_name ?? "Walk"}</p>
                   <p className="font-mono text-sm text-gray-400">
-                    ~{formatDuration((showQuick && routes.quick ? routes.quick : routes.recommended).duration)} left · {formatDistance((showQuick && routes.quick ? routes.quick : routes.recommended).distance)}
+                    ~{remainingTime} left · {remainingDistance}
                   </p>
                 </div>
                 <button
@@ -683,6 +685,10 @@ function PageContent() {
               isNavigating={isNavigating}
               onExitNavigation={() => setIsNavigating(false)}
               initialNavCenter={routes ? origin : undefined}
+              onRemainingUpdate={({ distance, time }) => {
+                setRemainingDistance(distance);
+                setRemainingTime(time);
+              }}
             />
             {routes && !isNavigating && (
               <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-4 pt-4 pb-6 z-[100]">
@@ -753,7 +759,14 @@ function PageContent() {
                           )}
                           <button
                             type="button"
-                            onClick={() => setIsNavigating(true)}
+                            onClick={() => {
+                            const active = showQuick && routes?.quick ? routes.quick : routes?.recommended;
+                            if (active) {
+                              setRemainingDistance(formatDistance(active.distance));
+                              setRemainingTime(formatDuration(active.duration));
+                            }
+                            setIsNavigating(true);
+                          }}
                             className="flex-1 py-3 bg-black text-white text-base reroute-uppercase font-medium rounded-none"
                           >
                             Let&apos;s go
@@ -770,14 +783,14 @@ function PageContent() {
 
           {/* BOTTOM: Input section — hidden during navigation */}
           {!isNavigating && (
-          <div className="flex-shrink-0 z-10 bg-white px-4 pt-3 pb-[env(safe-area-inset-bottom)] border-t border-gray-100">
+          <div className="flex-shrink-0 z-10 bg-white px-3 pt-3 pb-[env(safe-area-inset-bottom)] border-t border-gray-100">
             {/* Headline: hidden when section is fixed at top (any input focused) */}
             <div
               className={`overflow-hidden transition-all duration-200 ${
                 headlineVisible && !inputFocused && !startInputFocused ? "opacity-100 mb-1" : "opacity-0 h-0 mb-0 pointer-events-none"
               }`}
             >
-              <h1 className="font-mono font-bold text-4xl leading-tight uppercase">
+              <h1 className="font-mono font-bold text-3xl leading-none uppercase tracking-tighter">
                 WHAT ARE YOU IN THE MOOD FOR?
               </h1>
             </div>
@@ -840,7 +853,7 @@ function PageContent() {
                 →
               </button>
             </div>
-            <p className="mt-1 font-mono text-[8px] font-normal text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis" style={{ letterSpacing: "-0.02em" }} aria-hidden>
+            <p className="mt-1 font-mono text-[8px] font-normal text-gray-400 max-w-full break-words" style={{ letterSpacing: "-0.02em" }} aria-hidden>
               e.g. calm walk by the beach, architecture hunt in Eixample.
             </p>
             {routeError && (

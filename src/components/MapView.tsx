@@ -33,6 +33,8 @@ interface MapViewProps {
   onExitNavigation?: () => void;
   /** [lat, lng] to fly to immediately when entering nav (e.g. origin at Let's go click). */
   initialNavCenter?: [number, number];
+  /** Called when remaining distance/time along the route is updated during navigation. */
+  onRemainingUpdate?: (data: { distance: string; time: string }) => void;
 }
 
 export default function MapView({
@@ -54,6 +56,7 @@ export default function MapView({
   isNavigating = false,
   onExitNavigation,
   initialNavCenter,
+  onRemainingUpdate,
 }: MapViewProps) {
   return (
     <div className="absolute inset-0" style={{ zIndex: 1 }}>
@@ -76,6 +79,7 @@ export default function MapView({
         isNavigating={isNavigating}
         onExitNavigation={onExitNavigation}
         initialNavCenter={initialNavCenter}
+        onRemainingUpdate={onRemainingUpdate}
       />
     </div>
   );

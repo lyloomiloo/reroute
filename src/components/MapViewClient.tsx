@@ -323,6 +323,15 @@ function poiKey(lat: number, lng: number): string {
   return `${lat.toFixed(5)},${lng.toFixed(5)}`;
 }
 
+/** Total distance in meters along route. Coords are [lng, lat]. */
+function calculateRouteDistance(coords: [number, number][]): number {
+  let total = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    total += getDistance(coords[i][1], coords[i][0], coords[i + 1][1], coords[i + 1][0]);
+  }
+  return total;
+}
+
 interface MapViewClientProps {
   center: LatLngExpression;
   zoom: number;
@@ -352,6 +361,8 @@ interface MapViewClientProps {
   onExitNavigation?: () => void;
   /** [lat, lng] to fly to immediately when entering nav (e.g. origin at Let's go click). */
   initialNavCenter?: [number, number];
+  /** Called when remaining distance/time along the route is updated during navigation. */
+  onRemainingUpdate?: (data: { distance: string; time: string }) => void;
 }
 
 export default function MapViewClient({
@@ -373,6 +384,7 @@ export default function MapViewClient({
   isNavigating = false,
   onExitNavigation,
   initialNavCenter,
+  onRemainingUpdate,
 }: MapViewClientProps) {
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -404,6 +416,29 @@ export default function MapViewClient({
       }
     }
   }, [isNavigating]);
+
+  // During navigation: compute remaining route from closest point and report distance/time
+  useEffect(() => {
+    if (!isNavigating || !userPosition || !routeCoordinates?.length || !onRemainingUpdate) return;
+    const coords = routeCoordinates;
+    let closestIdx = 0;
+    let minD = Infinity;
+    for (let i = 0; i < coords.length; i++) {
+      const d = getDistance(userPosition.lat, userPosition.lng, coords[i][1], coords[i][0]);
+      if (d < minD) {
+        minD = d;
+        closestIdx = i;
+      }
+    }
+    const remainingCoords = coords.slice(closestIdx);
+    const remainingMeters = calculateRouteDistance(remainingCoords);
+    const remainingKm = (remainingMeters / 1000).toFixed(1);
+    const remainingMins = Math.ceil(remainingMeters / 80);
+    onRemainingUpdate({
+      distance: remainingKm + " km",
+      time: remainingMins + " min",
+    });
+  }, [isNavigating, userPosition?.lat, userPosition?.lng, routeCoordinates, onRemainingUpdate]);
 
   // Proximity check: when user is within 50m of an unseen POI, show toast and mark seen
   useEffect(() => {
