@@ -551,9 +551,9 @@ function PageContent() {
             {isNavigating && routes && (
               <div className="flex-shrink-0 bg-white px-4 py-2 border-b border-gray-100 flex justify-between items-start z-[1000]">
                 <div className="min-w-0 flex-1">
-                  <p className="font-mono text-xs text-gray-400">FROM: {customStart?.name ?? "Current Location"}</p>
-                  <p className="font-mono font-bold text-sm truncate">{destinationName ?? routes.destination_name ?? "Walk"}</p>
-                  <p className="font-mono text-xs text-gray-400">
+                  <p className="font-mono text-sm text-gray-400">FROM: {customStart?.name ?? "Current Location"}</p>
+                  <p className="font-mono font-bold text-base truncate">{destinationName ?? routes.destination_name ?? "Walk"}</p>
+                  <p className="font-mono text-sm text-gray-400">
                     ~{formatDuration((showQuick && routes.quick ? routes.quick : routes.recommended).duration)} left · {formatDistance((showQuick && routes.quick ? routes.quick : routes.recommended).distance)}
                   </p>
                 </div>
@@ -700,18 +700,18 @@ function PageContent() {
                     const active = routes.quick && showQuick ? routes.quick : routes.recommended;
                     return (
                       <>
-                        <p className="text-sm text-foreground reroute-uppercase font-bold pr-10">{active.summary}</p>
+                        <p className="text-base text-foreground reroute-uppercase font-bold pr-10">{active.summary}</p>
                         {routes.destination_name && (
-                          <p className="text-sm text-gray-600 mt-1 reroute-uppercase">
+                          <p className="text-base text-gray-600 mt-1 reroute-uppercase">
                             {routes.pattern === "mood_and_area"
                               ? `WALK IN ${routes.destination_name}`
                               : `→ ${routes.destination_name}`}
                           </p>
                         )}
-                        <p className="text-sm text-gray-500 mt-1 reroute-uppercase">
+                        <p className="text-base text-gray-500 mt-1 reroute-uppercase">
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
                         </p>
-                        <p className="font-mono font-bold text-[13px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
+                        <p className="font-mono font-normal text-[16px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
                         <div className="mt-3 pt-3 border-t border-gray-100">
@@ -720,12 +720,12 @@ function PageContent() {
                                 <button
                                   type="button"
                                   onClick={() => setShowQuick(false)}
-                                  className="text-sm text-gray-600 underline reroute-uppercase"
+                                  className="text-base text-gray-600 underline reroute-uppercase"
                                 >
                                   {routes.default_is_fastest ? "Use fastest route" : getUseRouteLabel(routes.intent)}
                                 </button>
                               ) : (
-                                <p className="text-sm text-gray-500 reroute-uppercase">
+                                <p className="text-base text-gray-500 reroute-uppercase">
                                   {routes.default_is_fastest
                                     ? `${getIntentRouteLabel(routes.intent)}: ${formatDuration(routes.quick.duration)} — `
                                     : `Fastest route: ${formatDuration(routes.quick.duration)} — `}
@@ -746,7 +746,7 @@ function PageContent() {
                               type="button"
                               onClick={handleTryAnotherRoute}
                               disabled={isLoading}
-                              className="flex-1 py-3 border border-gray-300 text-gray-700 text-xs reroute-uppercase font-medium rounded-none hover:bg-gray-50 disabled:opacity-50"
+                              className="flex-1 py-3 border border-gray-300 text-gray-700 text-sm reroute-uppercase font-medium rounded-none hover:bg-gray-50 disabled:opacity-50"
                             >
                               ↻ Try another route
                             </button>
@@ -754,7 +754,7 @@ function PageContent() {
                           <button
                             type="button"
                             onClick={() => setIsNavigating(true)}
-                            className="flex-1 py-3 bg-black text-white text-sm reroute-uppercase font-medium rounded-none"
+                            className="flex-1 py-3 bg-black text-white text-base reroute-uppercase font-medium rounded-none"
                           >
                             Let&apos;s go
                           </button>
@@ -779,7 +779,7 @@ function PageContent() {
             >
               <h1
                 className="font-mono font-normal text-xl tracking-tight text-black reroute-uppercase leading-tight line-clamp-2"
-                style={{ fontSize: "clamp(23px, 5.67vw, 37px)", letterSpacing: "-0.05em", wordSpacing: "-0.2em", lineHeight: 0.95 }}
+                style={{ fontSize: "clamp(23.5px, 5.78vw, 37.75px)", letterSpacing: "-0.05em", wordSpacing: "-0.2em", lineHeight: 0.95 }}
               >
                 What are you in the mood for?
               </h1>
@@ -1002,7 +1002,7 @@ function PageContent() {
               {placeOptions && placeOptions.length > 0 && (
                 <div className="px-4 py-3">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-serif font-normal text-base tracking-wide uppercase">
+                    <span className="font-mono font-bold text-sm tracking-wide uppercase">
                       Choose a place
                     </span>
                     <button
@@ -1014,7 +1014,7 @@ function PageContent() {
                       ✕
                     </button>
                   </div>
-                  <p className="font-mono font-bold text-[13px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
+                  <p className="font-mono font-normal text-[16px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
                     BETA · RESULTS MAY NOT BE PERFECT · CHECK REVIEWS
                   </p>
 
@@ -1078,7 +1078,7 @@ function PageContent() {
                                     <span>{place.rating.toFixed(1)} ★ · </span>
                                   )}
                                 </div>
-                                <div className="font-mono font-medium text-sm text-gray-500 line-clamp-2">
+                                <div className="font-mono font-medium text-[10px] text-gray-500 line-clamp-2 min-h-0 overflow-hidden">
                                   {place.description ? place.description.replace(/\.$/, "") : null}
                                 </div>
                               </div>
