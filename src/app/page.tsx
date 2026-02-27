@@ -777,7 +777,7 @@ function PageContent() {
                 headlineVisible && !inputFocused && !startInputFocused ? "opacity-100 mb-1" : "opacity-0 h-0 mb-0 pointer-events-none"
               }`}
             >
-              <h1 className="font-mono font-bold text-2xl leading-tight uppercase">
+              <h1 className="font-mono font-bold text-4xl leading-tight uppercase">
                 WHAT ARE YOU IN THE MOOD FOR?
               </h1>
             </div>
