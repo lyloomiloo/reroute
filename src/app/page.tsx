@@ -918,7 +918,7 @@ function PageContent() {
                 →
               </button>
             </div>
-            <p className="mt-1 font-mono text-[11px] font-normal text-gray-400 max-w-full break-words" style={{ letterSpacing: "-0.02em" }} aria-hidden>
+            <p className="mt-1 font-mono text-[9.3px] font-normal text-gray-400 max-w-full break-words" style={{ letterSpacing: "-0.02em" }} aria-hidden>
               e.g. calm walk by the beach, architecture hunt in Eixample.
             </p>
             {routeError && (
