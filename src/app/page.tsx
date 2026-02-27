@@ -566,8 +566,8 @@ function PageContent() {
                 const endPoint: [number, number] = [last[1], last[0]];
                 const fakeHighlights: RouteHighlight[] = [
                   {
-                    lat: fakeLat + 0.001,
-                    lng: fakeLng + 0.001,
+                    lat: fakeLat + 0.0001,
+                    lng: fakeLng + 0.0001,
                     label: "Mercat de la Boqueria",
                     type: "market",
                     name: "Mercat de la Boqueria",
@@ -858,7 +858,7 @@ function PageContent() {
                     setPlaceOptions(null);
                     setPlaceOptionsShownCount(5);
                   }}
-                  className="group inline-flex items-center gap-1.5 py-0.5 font-mono text-xs font-normal tracking-wide text-blue-600/70 hover:text-blue-500 reroute-uppercase whitespace-nowrap"
+                  className="group inline-flex items-center gap-1.5 py-0.5 font-mono text-xs font-normal tracking-wide text-[#4A90D9]/70 hover:text-[#4A90D9] reroute-uppercase whitespace-nowrap"
                   aria-expanded={false}
                   aria-label={customStart ? "Starting point" : "Change starting point"}
                 >
@@ -879,25 +879,25 @@ function PageContent() {
                           clearCustomStart();
                         }
                       }}
-                      className="shrink-0 text-blue-600/70 hover:text-blue-500"
+                      className="shrink-0 text-[#4A90D9]/70 hover:text-[#4A90D9]"
                       aria-label="Clear starting point"
                     >
                       ×
                     </span>
                   ) : (
-                    <svg className="shrink-0 w-3 h-3 text-blue-600/70 stroke-[1.5] group-hover:stroke-2 transition-[stroke]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <svg className="shrink-0 w-3 h-3 text-[#4A90D9]/70 stroke-[1.5] group-hover:stroke-2 transition-[stroke]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                     </svg>
                   )}
                 </button>
               ) : (
                 <>
-                  <div className="flex items-center gap-1.5 flex-wrap text-blue-600/70 text-[10px]">
+                  <div className="flex items-center gap-1.5 flex-wrap text-[#4A90D9]/70 text-[10px]">
                     <span className="reroute-uppercase tracking-wider shrink-0">From:</span>
             <input
                       type="text"
                       placeholder="e.g. Plaça Catalunya"
-                      className="flex-1 min-w-[120px] bg-transparent border-0 border-b border-blue-300/80 py-1 pr-1 text-[10px] text-blue-600/80 placeholder:text-blue-600/70 focus:outline-none focus:border-blue-500 font-mono"
+                      className="flex-1 min-w-[120px] bg-transparent border-0 border-b border-[#4A90D9]/80 py-1 pr-1 text-[10px] text-[#4A90D9]/80 placeholder:text-[#4A90D9]/70 focus:outline-none focus:border-[#4A90D9] font-mono"
                       value={startPointInput}
                       onChange={(e) => setStartPointInput(e.target.value)}
                       onFocus={() => setStartInputFocused(true)}
@@ -912,14 +912,14 @@ function PageContent() {
                       type="button"
                       onClick={handleSetStartPoint}
                       disabled={startPointGeocoding || !startPointInput.trim()}
-                      className="shrink-0 text-[10px] hover:text-blue-500 disabled:opacity-40 reroute-uppercase"
+                      className="shrink-0 text-[10px] hover:text-[#4A90D9] disabled:opacity-40 reroute-uppercase"
                     >
                       {startPointGeocoding ? "…" : "Set"}
                     </button>
                     <button
                       type="button"
                       onClick={() => setStartPointExpanded(false)}
-                      className="shrink-0 hover:text-blue-500 text-[10px] leading-none p-0.5"
+                      className="shrink-0 hover:text-[#4A90D9] text-[10px] leading-none p-0.5"
                       aria-label="Cancel"
                     >
                       ×
@@ -1006,7 +1006,7 @@ function PageContent() {
                       ✕
                     </button>
                   </div>
-                  <p className="font-mono font-bold text-[11px] tracking-wide text-blue-400 mt-0.5 mb-2">
+                  <p className="font-mono font-bold text-[11px] tracking-wide text-[#4A90D9] mt-0.5 mb-2">
                     BETA · RESULTS MAY NOT BE PERFECT · CHECK REVIEWS
                   </p>
 

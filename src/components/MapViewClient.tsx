@@ -66,12 +66,14 @@ function MapCenterUpdater({
 
 function FitRouteBounds({
   routeCoordinates,
+  isNavigating,
 }: {
   routeCoordinates?: [number, number][];
+  isNavigating?: boolean;
 }) {
   const map = useMap();
   useEffect(() => {
-    if (!routeCoordinates?.length) return;
+    if (isNavigating || !routeCoordinates?.length) return;
     const positions: L.LatLngExpression[] = routeCoordinates.map(
       ([lng, lat]) => [lat, lng] as [number, number]
     );
@@ -80,20 +82,22 @@ function FitRouteBounds({
       paddingTopLeft: [40, 40],
       paddingBottomRight: [40, 180],
     });
-  }, [map, routeCoordinates]);
+  }, [map, routeCoordinates, isNavigating]);
   return null;
 }
 
 function FitPlaceOptionsBounds({
   placeOptions,
   origin,
+  isNavigating,
 }: {
   placeOptions?: Array<{ lat: number; lng: number }>;
   origin?: [number, number];
+  isNavigating?: boolean;
 }) {
   const map = useMap();
   useEffect(() => {
-    if (!placeOptions?.length) return;
+    if (isNavigating || !placeOptions?.length) return;
     const points: L.LatLngExpression[] = placeOptions.map((p) => [p.lat, p.lng] as [number, number]);
     if (origin?.length === 2) points.push([origin[0], origin[1]]);
     const bounds = L.latLngBounds(points);
@@ -102,7 +106,7 @@ function FitPlaceOptionsBounds({
       paddingBottomRight: [40, 180],
       maxZoom: 15,
     });
-  }, [map, placeOptions, origin]);
+  }, [map, placeOptions, origin, isNavigating]);
   return null;
 }
 
@@ -170,8 +174,10 @@ function NavigationMapController({
     }
     prevNavigatingRef.current = true;
     if (!userPosition) return;
-    map.flyTo([userPosition.lat, userPosition.lng], 18, { animate: true, duration: 1.5 });
-  }, [isNavigating, map]);
+    const { lat, lng } = userPosition;
+    console.log("[nav] Flying to zoom 18:", lat, lng);
+    map.flyTo([lat, lng], 18, { animate: true, duration: 1.5 });
+  }, [isNavigating, map, userPosition]);
   useEffect(() => {
     if (!isNavigating || !userPosition || !autoFollow) return;
     map.panTo([userPosition.lat, userPosition.lng], { animate: true, duration: 0.5 });
@@ -231,7 +237,7 @@ L.Icon.Default.mergeOptions({
 });
 
 const USER_LOCATION_ICON = L.divIcon({
-  html: `<div class="user-location-dot" style="width:11px;height:11px;border-radius:50%;background:#4285F4;box-shadow:0 0 0 3px rgba(66,133,244,0.4);animation:user-location-pulse 2s ease-in-out infinite;"></div>`,
+  html: `<div class="user-location-dot" style="width:11px;height:11px;border-radius:50%;background:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,0.4);animation:user-location-pulse 2s ease-in-out infinite;"></div>`,
   className: "custom-pin-no-default",
   iconSize: [11, 11],
   iconAnchor: [5.5, 5.5],
@@ -240,17 +246,11 @@ const USER_LOCATION_ICON = L.divIcon({
 function getNavigationArrowIcon(heading: number): L.DivIcon {
   return L.divIcon({
     className: "",
-    html: `<div style="
-      width: 0;
-      height: 0;
-      border-left: 14px solid transparent;
-      border-right: 14px solid transparent;
-      border-bottom: 28px solid #1a1a1a;
-      transform: rotate(${heading}deg);
-      filter: drop-shadow(0 0 0 #000);
-    "></div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
+    html: `<svg width="24" height="24" viewBox="0 0 24 24" style="transform:rotate(${heading}deg)">
+    <polygon points="12,2 2,22 22,22" fill="white" stroke="#1a1a1a" stroke-width="2"/>
+  </svg>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
   });
 }
 
@@ -285,12 +285,12 @@ const NAV_POI_ICON = L.divIcon({
   iconAnchor: [6, 6],
 });
 
-/** Navigation mode: end marker — black square (brutalist). */
+/** Navigation mode: end marker — white square with dark outline. */
 const NAV_END_SQUARE_ICON = L.divIcon({
   className: "",
-  html: `<div style="width:20px;height:20px;background:#1a1a1a;border:2px solid #fff;"></div>`,
-  iconSize: [20, 20],
-  iconAnchor: [10, 10],
+  html: `<div style="width:10px;height:10px;background:#ffffff;border:2px solid #1a1a1a;"></div>`,
+  iconSize: [10, 10],
+  iconAnchor: [5, 5],
 });
 
 /** Navigation mode: POI passed (seen) — green check. */
@@ -520,8 +520,8 @@ export default function MapViewClient({
         <MapCenterUpdater center={center} zoom={zoom} skipWhenPlaceOptions={!!placeOptions?.length} skipWhenNavigating={isNavigating} />
         <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
         <MapZoomControls />
-        {!isNavigating && <FitRouteBounds routeCoordinates={routeCoordinates} />}
-        <FitPlaceOptionsBounds placeOptions={placeOptions} origin={origin} />
+        {!isNavigating && <FitRouteBounds routeCoordinates={routeCoordinates} isNavigating={isNavigating} />}
+        <FitPlaceOptionsBounds placeOptions={placeOptions} origin={origin} isNavigating={isNavigating} />
         <PanToFocusedPlace placeOptions={placeOptions} focusedIndex={placeOptionsFocusedIndex} />
         <NavigationMapController
           isNavigating={isNavigating}
@@ -560,10 +560,10 @@ export default function MapViewClient({
           <>
             <CircleMarker
               center={[routeCoordinates[0][1], routeCoordinates[0][0]]}
-              radius={8}
+              radius={5}
               pathOptions={{
-                fillColor: "#22c55e",
-                color: "#fff",
+                fillColor: "#ffffff",
+                color: "#1a1a1a",
                 weight: 2,
                 fillOpacity: 1,
               }}
