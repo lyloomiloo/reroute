@@ -715,10 +715,9 @@ function PageContent() {
               <div className="absolute inset-0 z-[2000] bg-white flex flex-col items-center justify-center px-6 text-center">
                 <pre className="font-mono text-lg leading-tight mb-6 text-center" style={{ letterSpacing: "2px" }}>
 {`
-      
-     \\o/
-       |
-     / \\
+ \\o/
+  |
+ / \\
 `}
                 </pre>
                 <p className="font-mono font-bold text-3xl uppercase leading-none tracking-tighter mb-3">
@@ -856,7 +855,7 @@ function PageContent() {
                 headlineVisible && !inputFocused && !startInputFocused ? "opacity-100 mb-1" : "opacity-0 h-0 mb-0 pointer-events-none"
               }`}
             >
-              <h1 className="font-mono font-bold text-[1.3125rem] leading-none uppercase tracking-tighter">
+              <h1 className="font-mono font-bold text-[2.8125rem] leading-none uppercase tracking-tighter">
                 WHAT ARE YOU IN THE MOOD FOR?
               </h1>
             </div>
