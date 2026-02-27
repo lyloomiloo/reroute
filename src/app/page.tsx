@@ -779,7 +779,7 @@ function PageContent() {
             >
               <h1
                 className="font-mono font-normal text-xl tracking-tight text-black reroute-uppercase leading-tight line-clamp-2"
-                style={{ fontSize: "clamp(23.5px, 5.78vw, 37.75px)", letterSpacing: "-0.05em", wordSpacing: "-0.2em", lineHeight: 0.95 }}
+                style={{ fontSize: "clamp(42px, 10.4vw, 68px)", letterSpacing: "-0.05em", wordSpacing: "-0.2em", lineHeight: 0.95 }}
               >
                 What are you in the mood for?
               </h1>
