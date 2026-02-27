@@ -713,10 +713,19 @@ function PageContent() {
             />
             {hasArrived && (
               <div className="absolute inset-0 z-[2000] bg-white flex flex-col items-center justify-center px-6 text-center">
-                <p className="font-mono text-4xl mb-2">*</p>
-                <p className="font-mono text-2xl mb-6">{`/|\\`}</p>
-                <p className="font-mono font-bold text-2xl uppercase leading-tight mb-2">
-                  YOU&apos;VE ARRIVED
+                <pre className="font-mono text-lg leading-tight mb-6 text-center" style={{ letterSpacing: "2px" }}>
+{`
+    \\  *  /
+   - -*- -
+    / * \\
+      
+     \\o/
+      |
+     / \\
+`}
+                </pre>
+                <p className="font-mono font-bold text-3xl uppercase leading-none tracking-tighter mb-3">
+                  YOU MADE IT!
                 </p>
                 <p className="font-mono text-sm text-gray-500 mb-1">
                   {destinationName ?? "Destination"}
@@ -850,7 +859,7 @@ function PageContent() {
                 headlineVisible && !inputFocused && !startInputFocused ? "opacity-100 mb-1" : "opacity-0 h-0 mb-0 pointer-events-none"
               }`}
             >
-              <h1 className="font-mono font-bold text-3xl leading-none uppercase tracking-tighter">
+              <h1 className="font-mono font-bold text-5xl leading-none uppercase tracking-tighter">
                 WHAT ARE YOU IN THE MOOD FOR?
               </h1>
             </div>
