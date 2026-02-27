@@ -71,7 +71,6 @@ function formatDistance(meters: number): string {
 }
 
 function PageContent() {
-  const [viewportHeight, setViewportHeight] = useState("100dvh");
   const [mapCenter, setMapCenter] = useState<[number, number] | null>(null);
   const [moodInput, setMoodInput] = useState("");
   const [routes, setRoutes] = useState<RoutesResponse | null>(null);
@@ -126,30 +125,6 @@ function PageContent() {
   useEffect(() => {
     const blink = setInterval(() => setColonVisible((v) => !v), 500);
     return () => clearInterval(blink);
-  }, []);
-
-  // iOS keyboard open/close: use visualViewport height so layout shrinks with keyboard
-  useEffect(() => {
-    const handleResize = () => {
-      setViewportHeight(`${window.visualViewport?.height ?? window.innerHeight}px`);
-    };
-    if (typeof window !== "undefined" && window.visualViewport) {
-      window.visualViewport.addEventListener("resize", handleResize);
-      window.visualViewport.addEventListener("scroll", handleResize);
-    }
-    if (typeof window !== "undefined") {
-      window.addEventListener("resize", handleResize);
-      handleResize();
-    }
-    return () => {
-      if (typeof window !== "undefined" && window.visualViewport) {
-        window.visualViewport.removeEventListener("resize", handleResize);
-        window.visualViewport.removeEventListener("scroll", handleResize);
-      }
-      if (typeof window !== "undefined") {
-        window.removeEventListener("resize", handleResize);
-      }
-    };
   }, []);
 
   /** Theme names for which we show "SURPRISE ME" in the edge-case popup. */
@@ -539,7 +514,7 @@ function PageContent() {
           </span>
         </div>
       )}
-      <div style={{ height: viewportHeight }} className="flex flex-col bg-[#f0f0f0]">
+      <div className="h-[100dvh] flex flex-col bg-[#f0f0f0]">
         <>
           {/* Edge-case centered modal */}
           {edgeCaseMessage && (
@@ -714,7 +689,7 @@ function PageContent() {
                   onPointerDown={() => {
                     moodInputClickedRef.current = true;
                   }}
-                  onFocus={() => {
+                  onFocus={(e) => {
                     setInputFocused(true);
                     setMoodInputFocused(true);
                     if (moodInputClickedRef.current) {
@@ -725,6 +700,9 @@ function PageContent() {
                       setPlaceOptions(null);
                       setPlaceOptionsShownCount(5);
                     }
+                    setTimeout(() => {
+                      e.target.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }, 300);
                   }}
                   onBlur={() => {
                     setMoodInputFocused(false);
