@@ -855,7 +855,7 @@ function PageContent() {
                 headlineVisible && !inputFocused && !startInputFocused ? "opacity-100 mb-1" : "opacity-0 h-0 mb-0 pointer-events-none"
               }`}
             >
-              <h1 className="font-mono font-bold text-[1.5rem] leading-none uppercase tracking-tighter">
+              <h1 className="font-mono font-bold text-[1.443rem] leading-none uppercase tracking-tighter whitespace-nowrap" style={{ wordSpacing: "-0.12em" }}>
                 WHAT ARE YOU IN THE MOOD FOR?
               </h1>
             </div>
@@ -918,7 +918,7 @@ function PageContent() {
                 →
               </button>
             </div>
-            <p className="mt-1 font-mono text-[8px] font-normal text-gray-400 max-w-full break-words" style={{ letterSpacing: "-0.02em" }} aria-hidden>
+            <p className="mt-1 font-mono text-[9.6px] font-normal text-gray-400 max-w-full break-words" style={{ letterSpacing: "-0.02em" }} aria-hidden>
               e.g. calm walk by the beach, architecture hunt in Eixample.
             </p>
             {routeError && (
