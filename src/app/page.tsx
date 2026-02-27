@@ -116,6 +116,7 @@ function PageContent() {
   const [isNavigating, setIsNavigating] = useState(false);
   const [remainingDistance, setRemainingDistance] = useState<string>("—");
   const [remainingTime, setRemainingTime] = useState<string>("—");
+  const [hasArrived, setHasArrived] = useState(false);
   const moodInputRef = useRef<HTMLInputElement | null>(null);
 
   const ROUTE_TIMEOUT_MS = 30000;
@@ -625,6 +626,16 @@ function PageContent() {
                     name: "Test Destination",
                     description: "End of test route",
                   },
+                  {
+                    lat: endPoint[0] + 0.00002,
+                    lng: endPoint[1] + 0.00002,
+                    label: "Near finish",
+                    type: "landmark",
+                    name: "Near finish",
+                    description: "POI near end for arrival test",
+                    placeId: "test-near-finish",
+                    photoRef: null as string | null,
+                  },
                 ];
                 setRoutes({
                   recommended: {
@@ -649,6 +660,15 @@ function PageContent() {
             >
               TEST ROUTE
             </button>
+            {isNavigating && !hasArrived && (
+              <button
+                type="button"
+                onClick={() => setHasArrived(true)}
+                className="absolute top-28 left-4 z-[9999] bg-red-500 text-white px-3 py-1 rounded text-xs font-mono"
+              >
+                TEST ARRIVE
+              </button>
+            )}
             {isLoading && (
               <div className="absolute inset-0 bg-white/80 z-[50] flex flex-col items-center justify-center">
                 <pre className="loading-walker text-[10px] leading-[1.2] text-black font-mono whitespace-pre text-center" aria-hidden>
@@ -689,7 +709,46 @@ function PageContent() {
                 setRemainingDistance(distance);
                 setRemainingTime(time);
               }}
+              onArrived={() => setHasArrived(true)}
             />
+            {hasArrived && (
+              <div className="absolute inset-0 z-[2000] bg-white flex flex-col items-center justify-center px-6 text-center">
+                <p className="font-mono text-4xl mb-2">*</p>
+                <p className="font-mono text-2xl mb-6">{`/|\\`}</p>
+                <p className="font-mono font-bold text-2xl uppercase leading-tight mb-2">
+                  YOU&apos;VE ARRIVED
+                </p>
+                <p className="font-mono text-sm text-gray-500 mb-1">
+                  {destinationName ?? "Destination"}
+                </p>
+                <p className="font-mono text-xs text-gray-400 mb-8">
+                  {routes ? formatDistance(showQuick && routes.quick ? routes.quick.distance : routes.recommended.distance) : "1.2 km"} walked · {routes?.intent ? [routes.intent].join(", ") : ""}
+                </p>
+                <div className="w-full border-t border-gray-100 pt-6 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHasArrived(false);
+                      setIsNavigating(false);
+                    }}
+                    className="w-full bg-black text-white font-mono font-bold text-sm py-4 rounded-lg uppercase tracking-wide"
+                  >
+                    DONE
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHasArrived(false);
+                      setIsNavigating(false);
+                      handleClearRoute();
+                    }}
+                    className="w-full bg-white text-black border border-gray-200 font-mono text-sm py-4 rounded-lg uppercase tracking-wide"
+                  >
+                    NEW WALK
+                  </button>
+                </div>
+              </div>
+            )}
             {routes && !isNavigating && (
               <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-4 pt-4 pb-6 z-[100]">
                 <div className="max-w-md mx-auto relative">
@@ -765,6 +824,7 @@ function PageContent() {
                               setRemainingDistance(formatDistance(active.distance));
                               setRemainingTime(formatDuration(active.duration));
                             }
+                            setHasArrived(false);
                             setIsNavigating(true);
                           }}
                             className="flex-1 py-3 bg-black text-white text-base reroute-uppercase font-medium rounded-none"

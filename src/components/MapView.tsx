@@ -35,6 +35,8 @@ interface MapViewProps {
   initialNavCenter?: [number, number];
   /** Called when remaining distance/time along the route is updated during navigation. */
   onRemainingUpdate?: (data: { distance: string; time: string }) => void;
+  /** Called when user is within 30m of the route end (arrival). */
+  onArrived?: () => void;
 }
 
 export default function MapView({
@@ -57,6 +59,7 @@ export default function MapView({
   onExitNavigation,
   initialNavCenter,
   onRemainingUpdate,
+  onArrived,
 }: MapViewProps) {
   return (
     <div className="absolute inset-0" style={{ zIndex: 1 }}>
@@ -80,6 +83,7 @@ export default function MapView({
         onExitNavigation={onExitNavigation}
         initialNavCenter={initialNavCenter}
         onRemainingUpdate={onRemainingUpdate}
+        onArrived={onArrived}
       />
     </div>
   );

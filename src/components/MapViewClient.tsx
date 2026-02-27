@@ -363,6 +363,8 @@ interface MapViewClientProps {
   initialNavCenter?: [number, number];
   /** Called when remaining distance/time along the route is updated during navigation. */
   onRemainingUpdate?: (data: { distance: string; time: string }) => void;
+  /** Called when user is within 30m of the route end (arrival). */
+  onArrived?: () => void;
 }
 
 export default function MapViewClient({
@@ -385,6 +387,7 @@ export default function MapViewClient({
   onExitNavigation,
   initialNavCenter,
   onRemainingUpdate,
+  onArrived,
 }: MapViewClientProps) {
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -438,7 +441,12 @@ export default function MapViewClient({
       distance: remainingKm + " km",
       time: remainingMins + " min",
     });
-  }, [isNavigating, userPosition?.lat, userPosition?.lng, routeCoordinates, onRemainingUpdate]);
+    const lastCoord = coords[coords.length - 1];
+    const distToEnd = getDistance(userPosition.lat, userPosition.lng, lastCoord[1], lastCoord[0]);
+    if (distToEnd < 30 && onArrived) {
+      onArrived();
+    }
+  }, [isNavigating, userPosition?.lat, userPosition?.lng, routeCoordinates, onRemainingUpdate, onArrived]);
 
   // Proximity check: when user is within 50m of an unseen POI, show toast and mark seen
   useEffect(() => {
