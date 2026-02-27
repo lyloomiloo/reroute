@@ -9,6 +9,7 @@ import {
   getRouteWithDuration,
   getRouteWithDestination,
   type RoutesResponse,
+  type RouteHighlight,
   type PlaceOption,
   type Intent,
   type DurationPromptResponse,
@@ -112,6 +113,7 @@ function PageContent() {
   const [destinationRating, setDestinationRating] = useState<number | null>(null);
   const [time, setTime] = useState(new Date());
   const [colonVisible, setColonVisible] = useState(true);
+  const [isNavigating, setIsNavigating] = useState(false);
   const moodInputRef = useRef<HTMLInputElement | null>(null);
 
   const ROUTE_TIMEOUT_MS = 30000;
@@ -546,6 +548,63 @@ function PageContent() {
           )}
           {/* Map fills remaining space; route results overlay at bottom */}
           <div className="flex-1 relative overflow-hidden flex flex-col min-h-0 bg-[#f0f0f0]">
+            {/* TEMP: Remove before deploy */}
+            <button
+              type="button"
+              onClick={() => {
+                const originCoords = customStart?.coords ?? mapCenter ?? BARCELONA_CENTER;
+                const fakeLat = originCoords[0];
+                const fakeLng = originCoords[1];
+                const fakeRouteLngLat: [number, number][] = [
+                  [fakeLng, fakeLat],
+                  [fakeLng, fakeLat + 0.003],
+                  [fakeLng + 0.004, fakeLat + 0.003],
+                  [fakeLng + 0.004, fakeLat],
+                  [fakeLng + 0.002, fakeLat - 0.002],
+                ];
+                const last = fakeRouteLngLat[fakeRouteLngLat.length - 1];
+                const endPoint: [number, number] = [last[1], last[0]];
+                const fakeHighlights: RouteHighlight[] = [
+                  {
+                    lat: fakeLat + 0.0015,
+                    lng: fakeLng + 0.002,
+                    label: "Test POI near route",
+                    type: "poi",
+                    name: "Test POI near route",
+                    description: "Fake highlight for navigation proximity test",
+                  },
+                  {
+                    lat: endPoint[0],
+                    lng: endPoint[1],
+                    label: "Test Destination",
+                    type: "destination",
+                    name: "Test Destination",
+                    description: "End of test route",
+                  },
+                ];
+                setRoutes({
+                  recommended: {
+                    coordinates: fakeRouteLngLat,
+                    duration: 900,
+                    distance: 1200,
+                    summary: "Tree-lined streets, low noise, park views",
+                    score: 0.85,
+                    breakdown: { noise: 0.2, green: 0.4, clean: 0.2, cultural: 0.2 },
+                    highlights: fakeHighlights,
+                  },
+                  quick: null,
+                  destination_name: "Test Destination",
+                  destination_address: null,
+                  pattern: "mood_only",
+                  intent: "calm",
+                  end_point: endPoint,
+                });
+                setRouteError(null);
+              }}
+              className="absolute top-16 left-4 z-[9999] bg-red-500 text-white px-3 py-1 rounded text-xs font-mono"
+            >
+              TEST ROUTE
+            </button>
             {isLoading && (
               <div className="absolute inset-0 bg-white/80 z-[50] flex flex-col items-center justify-center">
                 <pre className="loading-walker text-[10px] leading-[1.2] text-black font-mono whitespace-pre text-center" aria-hidden>
@@ -579,8 +638,30 @@ function PageContent() {
               origin={origin}
               showUserLocation={!customStart}
               onPlaceSelect={placeOptions?.length ? handleRouteToPlace : undefined}
+              isNavigating={isNavigating}
+              onExitNavigation={() => setIsNavigating(false)}
             />
-            {routes && (
+            {isNavigating && routes && (
+              <div className="absolute top-0 left-0 right-0 z-[100] flex items-center justify-between gap-2 bg-white/95 backdrop-blur px-4 py-2.5 border-b border-gray-100">
+                <div className="min-w-0 flex-1">
+                  <p className="font-mono text-xs font-medium text-gray-900 truncate">
+                    {destinationName ?? routes.destination_name ?? "Walk"}
+                  </p>
+                  <p className="font-mono text-[10px] text-gray-500">
+                    ~{formatDuration((showQuick && routes.quick ? routes.quick : routes.recommended).duration)} left
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsNavigating(false)}
+                  className="shrink-0 w-8 h-8 flex items-center justify-center text-gray-500 hover:text-black font-mono text-lg border border-gray-200 rounded"
+                  aria-label="Exit navigation"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            {routes && !isNavigating && (
               <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-4 pt-4 pb-6 z-[100]">
                 <div className="max-w-md mx-auto relative">
                   <button
@@ -608,7 +689,7 @@ function PageContent() {
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
                         </p>
                         <p className="text-[10px] text-gray-400 mt-1 font-mono tracking-wide">
-                          BETA · ROUTES ARE AI-GENERATED AND MAY HAVE ERRORS
+                          (RE)ROUTE IS IN BETA AND MAY MAKE SOME ERRORS.
                         </p>
                         <div className="mt-3 pt-3 border-t border-gray-100">
                             {routes.quick && !routes.routes_are_similar && routes.pattern !== "mood_and_area" && (
@@ -649,6 +730,7 @@ function PageContent() {
                           )}
                           <button
                             type="button"
+                            onClick={() => setIsNavigating(true)}
                             className="flex-1 py-3 bg-black text-white text-sm reroute-uppercase font-medium rounded-none"
                           >
                             Let&apos;s go
@@ -662,7 +744,8 @@ function PageContent() {
             )}
           </div>
 
-          {/* BOTTOM: Input section — flex-shrink-0 so keyboard shrinks map, not this */}
+          {/* BOTTOM: Input section — hidden during navigation */}
+          {!isNavigating && (
           <div className="flex-shrink-0 z-10 bg-white px-4 pt-3 pb-[env(safe-area-inset-bottom)] border-t border-gray-100">
             {/* Headline: hidden when section is fixed at top (any input focused) */}
             <div
@@ -1003,6 +1086,7 @@ function PageContent() {
                 </div>
               )}
             </div>
+          )}
           </>
       </div>
     </PhoneFrame>

@@ -66,6 +66,20 @@ body {
   border: none !important;
 }
 
+/* Navigation mode: directional arrow (no Leaflet default bg) */
+.navigation-arrow {
+  background: none !important;
+  border: none !important;
+}
+
+@keyframes slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
 @keyframes pin-pulse {
   0%, 100% { box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
   50% { box-shadow: 0 0 0 4px rgba(0,0,0,0.3); }

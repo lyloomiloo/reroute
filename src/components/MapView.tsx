@@ -27,6 +27,10 @@ interface MapViewProps {
   showUserLocation?: boolean;
   /** When user taps a place-option pin on the map, call this (same as "GO" on the card). */
   onPlaceSelect?: (place: PlaceOption) => void;
+  /** When true, map is in navigation mode: arrow marker, follow user, zoom 17. */
+  isNavigating?: boolean;
+  /** Called when user exits navigation (e.g. X button). */
+  onExitNavigation?: () => void;
 }
 
 export default function MapView({
@@ -45,6 +49,8 @@ export default function MapView({
   origin,
   showUserLocation = true,
   onPlaceSelect,
+  isNavigating = false,
+  onExitNavigation,
 }: MapViewProps) {
   return (
     <div className="absolute inset-0" style={{ zIndex: 1 }}>
@@ -64,6 +70,8 @@ export default function MapView({
         origin={origin}
         showUserLocation={showUserLocation}
         onPlaceSelect={onPlaceSelect}
+        isNavigating={isNavigating}
+        onExitNavigation={onExitNavigation}
       />
     </div>
   );

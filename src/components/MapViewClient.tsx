@@ -43,22 +43,24 @@ function MapCenterUpdater({
   center,
   zoom,
   skipWhenPlaceOptions,
+  skipWhenNavigating,
 }: {
   center: LatLngExpression;
   zoom: number;
   skipWhenPlaceOptions?: boolean;
+  skipWhenNavigating?: boolean;
 }) {
   const map = useMap();
   const setViewCountRef = useRef(0);
   useEffect(() => {
-    if (skipWhenPlaceOptions) return;
+    if (skipWhenPlaceOptions || skipWhenNavigating) return;
     if (setViewCountRef.current < 2) {
       const [lat, lng] = Array.isArray(center) ? center : [center.lat, center.lng];
       const viewLat = lat + CENTER_OFFSET_LAT;
       map.setView([viewLat, lng], zoom, { animate: false });
       setViewCountRef.current += 1;
     }
-  }, [map, center, zoom, skipWhenPlaceOptions]);
+  }, [map, center, zoom, skipWhenPlaceOptions, skipWhenNavigating]);
   return null;
 }
 
@@ -128,6 +130,63 @@ function PanToFocusedPlace({
   return null;
 }
 
+function NavigationMapController({
+  isNavigating,
+  userPosition,
+  autoFollow,
+  onDragStart,
+  routeCoordinates,
+  center,
+  zoom,
+}: {
+  isNavigating: boolean;
+  userPosition: { lat: number; lng: number } | null;
+  autoFollow: boolean;
+  onDragStart: () => void;
+  routeCoordinates?: [number, number][];
+  center: LatLngExpression;
+  zoom: number;
+}) {
+  const map = useMap();
+  const prevNavigatingRef = useRef(false);
+  useEffect(() => {
+    if (!isNavigating) {
+      if (prevNavigatingRef.current) {
+        prevNavigatingRef.current = false;
+        if (routeCoordinates?.length) {
+          const positions: L.LatLngExpression[] = routeCoordinates.map(
+            ([lng, lat]) => [lat, lng] as [number, number]
+          );
+          map.fitBounds(L.latLngBounds(positions), {
+            paddingTopLeft: [40, 40],
+            paddingBottomRight: [40, 180],
+          });
+        } else {
+          const [lat, lng] = Array.isArray(center) ? center : [center.lat, center.lng];
+          map.setView([lat, lng], zoom, { animate: true });
+        }
+      }
+      return;
+    }
+    prevNavigatingRef.current = true;
+    if (!userPosition) return;
+    map.flyTo([userPosition.lat, userPosition.lng], 17, { animate: true, duration: 0.5 });
+  }, [isNavigating, map]);
+  useEffect(() => {
+    if (!isNavigating || !userPosition || !autoFollow) return;
+    map.panTo([userPosition.lat, userPosition.lng], { animate: true, duration: 0.5 });
+  }, [isNavigating, userPosition?.lat, userPosition?.lng, autoFollow, map]);
+  useEffect(() => {
+    if (!isNavigating) return;
+    const onDrag = () => onDragStart();
+    map.on("dragstart", onDrag);
+    return () => {
+      map.off("dragstart", onDrag);
+    };
+  }, [isNavigating, onDragStart, map]);
+  return null;
+}
+
 function MapZoomControls() {
   const map = useMap();
   return (
@@ -178,6 +237,22 @@ const USER_LOCATION_ICON = L.divIcon({
   iconAnchor: [5.5, 5.5],
 });
 
+function getNavigationArrowIcon(heading: number): L.DivIcon {
+  return L.divIcon({
+    className: "navigation-arrow",
+    html: `<div style="
+      width: 24px;
+      height: 24px;
+      background: #4A90D9;
+      clip-path: polygon(50% 0%, 0% 100%, 50% 75%, 100% 100%);
+      transform: rotate(${heading}deg);
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+    "></div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
 const END_POINT_ICON = L.divIcon({
   html: `<div style="width:14px;height:14px;border-radius:50%;background:#4A7C59;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);"></div>`,
   className: "custom-pin-no-default",
@@ -200,6 +275,39 @@ const PLACE_OPTION_ICON = L.divIcon({
   iconSize: [12, 12],
   iconAnchor: [6, 6],
 });
+
+/** Navigation mode: POI along route (unseen) — orange dot. */
+const NAV_POI_ICON = L.divIcon({
+  html: `<div style="width:12px;height:12px;border-radius:50%;background:#ea580c;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.25);"></div>`,
+  className: "custom-pin-no-default",
+  iconSize: [12, 12],
+  iconAnchor: [6, 6],
+});
+
+/** Navigation mode: POI passed (seen) — green check. */
+const NAV_POI_SEEN_ICON = L.divIcon({
+  html: `<div style="width:14px;height:14px;border-radius:50%;background:#16a34a;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;color:white;font-size:8px;line-height:1;">✓</div>`,
+  className: "custom-pin-no-default",
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+});
+
+function getDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000; // meters
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function poiKey(lat: number, lng: number): string {
+  return `${lat.toFixed(5)},${lng.toFixed(5)}`;
+}
 
 interface MapViewClientProps {
   center: LatLngExpression;
@@ -224,6 +332,10 @@ interface MapViewClientProps {
   showUserLocation?: boolean;
   /** When user taps a place-option pin, call this (same as "GO" on the card). */
   onPlaceSelect?: (place: PlaceOption) => void;
+  /** When true, map is in navigation mode: arrow marker, follow user, zoom 17. */
+  isNavigating?: boolean;
+  /** Called when user exits navigation. */
+  onExitNavigation?: () => void;
 }
 
 export default function MapViewClient({
@@ -242,8 +354,14 @@ export default function MapViewClient({
   origin,
   showUserLocation = true,
   onPlaceSelect,
+  isNavigating = false,
+  onExitNavigation,
 }: MapViewClientProps) {
-  const [userPosition, setUserPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
+  const [autoFollow, setAutoFollow] = useState(true);
+  const [seenPoiKeys, setSeenPoiKeys] = useState<Set<string>>(() => new Set());
+  const [toastPoi, setToastPoi] = useState<{ name: string; description?: string } | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [selectedHighlight, setSelectedHighlight] = useState<RouteHighlight | null>(null);
   const placeOptionMarkerRefs = useRef<(L.Marker | null)[]>([]);
@@ -258,6 +376,52 @@ export default function MapViewClient({
     });
   }, [placeOptions, placeOptionsFocusedIndex]);
 
+  // Reset POI seen state when entering navigation
+  useEffect(() => {
+    if (isNavigating) {
+      setSeenPoiKeys(new Set());
+      setToastPoi(null);
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = null;
+      }
+    }
+  }, [isNavigating]);
+
+  // Proximity check: when user is within 50m of an unseen POI, show toast and mark seen
+  useEffect(() => {
+    if (!isNavigating || !userPosition || !highlights?.length) return;
+    for (const h of highlights) {
+      const key = poiKey(h.lat, h.lng);
+      if (seenPoiKeys.has(key)) continue;
+      const d = getDistance(userPosition.lat, userPosition.lng, h.lat, h.lng);
+      if (d < 50) {
+        setSeenPoiKeys((prev) => new Set(prev).add(key));
+        setToastPoi({
+          name: h.name ?? h.label,
+          description: h.description,
+        });
+        break;
+      }
+    }
+  }, [isNavigating, userPosition?.lat, userPosition?.lng, highlights, seenPoiKeys]);
+
+  // Auto-dismiss toast after 8s
+  useEffect(() => {
+    if (!toastPoi) return;
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastPoi(null);
+      toastTimeoutRef.current = null;
+    }, 8000);
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = null;
+      }
+    };
+  }, [toastPoi]);
+
   useEffect(() => {
     if (typeof window === "undefined" || !window.navigator?.geolocation) return;
     let watchId: number | undefined;
@@ -265,9 +429,13 @@ export default function MapViewClient({
       const geo = window.navigator.geolocation;
       const onSuccess = (pos: GeolocationPosition) => {
         setLocationError(null);
-        const { latitude, longitude } = pos.coords;
+        const { latitude, longitude, heading } = pos.coords;
         if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-          setUserPosition({ lat: latitude, lng: longitude });
+          setUserPosition({
+            lat: latitude,
+            lng: longitude,
+            heading: typeof heading === "number" && Number.isFinite(heading) ? heading : undefined,
+          });
         }
       };
       const onError = (error: GeolocationPositionError) => {
@@ -301,6 +469,38 @@ export default function MapViewClient({
           {locationError}
         </div>
       )}
+      {isNavigating && toastPoi && (
+        <div
+          className="fixed bottom-4 left-4 right-4 bg-white rounded-lg shadow-lg p-3 flex items-center gap-3 animate-slide-up z-[250]"
+          style={{ boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-500 flex-shrink-0 text-base">
+            📍
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-sm truncate text-gray-900">{toastPoi.name}</p>
+            {toastPoi.description ? (
+              <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{toastPoi.description}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setToastPoi(null);
+              if (toastTimeoutRef.current) {
+                clearTimeout(toastTimeoutRef.current);
+                toastTimeoutRef.current = null;
+              }
+            }}
+            className="text-gray-400 hover:text-gray-600 text-sm p-1 shrink-0"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <MapContainer
         center={center}
         zoom={zoom}
@@ -308,38 +508,74 @@ export default function MapViewClient({
         style={{ zIndex: 1 }}
         zoomControl={false}
       >
-        <MapCenterUpdater center={center} zoom={zoom} skipWhenPlaceOptions={!!placeOptions?.length} />
+        <MapCenterUpdater center={center} zoom={zoom} skipWhenPlaceOptions={!!placeOptions?.length} skipWhenNavigating={isNavigating} />
         <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
         <MapZoomControls />
-        <FitRouteBounds routeCoordinates={routeCoordinates} />
+        {!isNavigating && <FitRouteBounds routeCoordinates={routeCoordinates} />}
         <FitPlaceOptionsBounds placeOptions={placeOptions} origin={origin} />
         <PanToFocusedPlace placeOptions={placeOptions} focusedIndex={placeOptionsFocusedIndex} />
+        <NavigationMapController
+          isNavigating={isNavigating}
+          userPosition={userPosition}
+          autoFollow={autoFollow}
+          onDragStart={() => {
+            setAutoFollow(false);
+            setTimeout(() => setAutoFollow(true), 5000);
+          }}
+          routeCoordinates={routeCoordinates}
+          center={center}
+          zoom={zoom}
+        />
         {routeCoordinates?.length ? (
-          <Polyline
-            positions={routeCoordinates.map(([lng, lat]) => [lat, lng] as [number, number])}
-            pathOptions={{
-              ...(ROUTE_INTENT_COLORS[routeIntent ?? ""] ?? DEFAULT_ROUTE_COLOR),
-              weight: 4,
-            }}
-          />
+          <>
+            {isNavigating && (
+              <Polyline
+                positions={routeCoordinates.map(([lng, lat]) => [lat, lng] as [number, number])}
+                pathOptions={{
+                  color: "#e0e0e0",
+                  weight: 8,
+                  opacity: 0.25,
+                }}
+              />
+            )}
+            <Polyline
+              positions={routeCoordinates.map(([lng, lat]) => [lat, lng] as [number, number])}
+              pathOptions={{
+                ...(ROUTE_INTENT_COLORS[routeIntent ?? ""] ?? DEFAULT_ROUTE_COLOR),
+                weight: isNavigating ? 5 : 4,
+              }}
+            />
+          </>
         ) : null}
         {highlights?.map((h, i) => (
           <Marker
             key={i}
             position={[h.lat, h.lng]}
-            icon={h.type === "destination" ? END_POINT_ICON : POI_DOT_ICON}
-            eventHandlers={{
-              click: (e) => {
-                L.DomEvent.stopPropagation(e);
-                setSelectedHighlight(h);
-              },
-            }}
+            icon={
+              isNavigating
+                ? seenPoiKeys.has(poiKey(h.lat, h.lng))
+                  ? NAV_POI_SEEN_ICON
+                  : NAV_POI_ICON
+                : h.type === "destination"
+                  ? END_POINT_ICON
+                  : POI_DOT_ICON
+            }
+            eventHandlers={
+              isNavigating
+                ? undefined
+                : {
+                    click: (e) => {
+                      L.DomEvent.stopPropagation(e);
+                      setSelectedHighlight(h);
+                    },
+                  }
+            }
           />
         ))}
         {showUserLocation && userPosition && (
           <Marker
             position={[userPosition.lat, userPosition.lng]}
-            icon={USER_LOCATION_ICON}
+            icon={isNavigating ? getNavigationArrowIcon(userPosition.heading ?? 0) : USER_LOCATION_ICON}
             zIndexOffset={-100}
           />
         )}
