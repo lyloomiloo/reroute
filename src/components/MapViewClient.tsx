@@ -251,9 +251,16 @@ const USER_LOCATION_ICON = L.divIcon({
 function getNavigationArrowIcon(heading: number): L.DivIcon {
   return L.divIcon({
     className: "",
-    html: `<svg width="28" height="36" viewBox="0 0 28 36" style="transform:rotate(${heading}deg)">
-    <polygon points="14,0 3,36 14,28 25,36" fill="white" stroke="#1a1a1a" stroke-width="2" stroke-linejoin="round"/>
-  </svg>`,
+    html: `<div style="
+    font-family: 'Courier New', monospace;
+    font-size: 20px;
+    line-height: 0.9;
+    color: #1a1a1a;
+    text-align: center;
+    white-space: pre;
+    transform: rotate(${heading ?? 0}deg);
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.15));
+  ">*\n/|\\\n/ \\</div>`,
     iconSize: [28, 36],
     iconAnchor: [14, 18],
   });
@@ -266,12 +273,20 @@ const END_POINT_ICON = L.divIcon({
   iconAnchor: [7, 7],
 });
 
-/** Start of route: same size as end point, route purple/lilac. */
+/** Start of route: standing figure (stationary walking man). */
 const START_POINT_ICON = L.divIcon({
-  html: `<div style="width:14px;height:14px;border-radius:50%;background:#8B7FE8;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);"></div>`,
-  className: "custom-pin-no-default",
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
+  className: "",
+  html: `<div style="
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 0.9;
+    color: #1a1a1a;
+    text-align: center;
+    white-space: pre;
+    opacity: 0.4;
+  ">*\n|\n/\\</div>`,
+  iconSize: [14, 20],
+  iconAnchor: [7, 10],
 });
 
 /** Place option (e.g. "choose a place to route to") — orange dot. */
@@ -290,12 +305,20 @@ const NAV_POI_ICON = L.divIcon({
   iconAnchor: [6, 6],
 });
 
-/** Navigation mode: end marker — white square with dark outline. */
+/** Navigation mode: end marker — flag/destination diamond. */
 const NAV_END_SQUARE_ICON = L.divIcon({
   className: "",
-  html: `<div style="width:16px;height:16px;background:#ffffff;border:2.5px solid #1a1a1a;"></div>`,
-  iconSize: [16, 16],
-  iconAnchor: [8, 8],
+  html: `<div style="
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 0.9;
+    color: #1a1a1a;
+    text-align: center;
+    white-space: pre;
+    opacity: 0.5;
+  ">◆</div>`,
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
 });
 
 /** Navigation mode: POI passed (seen) — green check. */
