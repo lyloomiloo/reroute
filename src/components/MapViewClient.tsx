@@ -567,7 +567,6 @@ export default function MapViewClient({
                 weight: 2,
                 fillOpacity: 1,
               }}
-              zIndexOffset={60}
             >
               <Tooltip permanent direction="top" className="font-mono text-[10px]">
                 START
