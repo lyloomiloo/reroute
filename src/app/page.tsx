@@ -514,7 +514,7 @@ function PageContent() {
           </span>
         </div>
       )}
-      <div className="h-[100dvh] flex flex-col">
+      <div className="h-[100dvh] flex flex-col bg-white">
         <>
           {/* Edge-case centered modal */}
           {edgeCaseMessage && (
