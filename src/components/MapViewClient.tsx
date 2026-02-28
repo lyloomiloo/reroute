@@ -766,8 +766,8 @@ export default function MapViewClient({
             icon={L.divIcon({
               className: "",
               html: '<div class="start-pulse"></div>',
-              iconSize: [16, 16],
-              iconAnchor: [8, 8],
+              iconSize: [10, 10],
+              iconAnchor: [5, 5],
             })}
           />
         )}
