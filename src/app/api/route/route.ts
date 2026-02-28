@@ -745,6 +745,22 @@ async function fetchIsochrone(
   return ring;
 }
 
+/** Waypoint at distanceM from origin in direction bearingDeg (0 = north, 90 = east). */
+function waypointFromBearing(
+  originLat: number,
+  originLng: number,
+  distanceM: number,
+  bearingDeg: number
+): [number, number] {
+  const latDegPerM = 1 / 111320;
+  const bearingRad = (bearingDeg * Math.PI) / 180;
+  const originLatRad = (originLat * Math.PI) / 180;
+  const lngDegPerM = 1 / (111320 * Math.cos(originLatRad));
+  const waypointLat = originLat + distanceM * latDegPerM * Math.cos(bearingRad);
+  const waypointLng = originLng + distanceM * lngDegPerM * Math.sin(bearingRad);
+  return [waypointLat, waypointLng];
+}
+
 function pickWaypointFromBoundary(
   intent: Intent,
   boundary: [number, number][],
@@ -3058,6 +3074,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (pattern === "mood_only") {
+      // Duration-based mood_only with no destination → treat as loop (e.g. "30 min calm walk")
+      if (effectiveDuration != null && effectiveDuration > 0) {
+        isLoop = true;
+      }
       const { index } = await loadStreetData();
       // When loop + area (e.g. "Tibidabo walk"), start the loop from the area center so the route stays in that area
       let loopOrigin: [number, number] = [...originCoords];
@@ -3082,16 +3102,55 @@ export async function POST(req: NextRequest) {
       let waypoint: [number, number];
       let destination_name: string | null = null;
       let destination_address: string | null = null;
+      type RouteSegment = { coordinates: [number, number][]; duration: number; distance: number };
+      let oneWayRoute: RouteSegment | null = null;
       const namedDest = await findMoodOnlyDestination(
         loopOrigin[0],
         loopOrigin[1],
         intent as Intent,
-        effectiveDuration!
+        isLoop ? effectiveDuration! / 2 : effectiveDuration!
       );
       if (namedDest) {
         waypoint = [namedDest.lat, namedDest.lng];
         destination_name = namedDest.name;
         destination_address = namedDest.description;
+      } else if (isLoop) {
+        const outboundM = (effectiveDuration! * 80) / 2;
+        let best: { route: RouteSegment; wp: [number, number]; score: number } | null = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const bearing = Math.random() * 360;
+          const wp = waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, bearing);
+          try {
+            const outRoutes = await fetchOrsRoutes(loopOrigin, wp, intent, forceAvoidZones);
+            const backRoutes = await fetchOrsRoutes(wp, loopOrigin, intent, forceAvoidZones);
+            if (!outRoutes[0] || !backRoutes[0]) continue;
+            const loopCoords = [...outRoutes[0].coordinates, ...backRoutes[0].coordinates.slice(1)] as [number, number][];
+            const combined: RouteSegment = {
+              coordinates: loopCoords,
+              duration: outRoutes[0].duration + backRoutes[0].duration,
+              distance: outRoutes[0].distance + backRoutes[0].distance,
+            };
+            const { score } = scoreRoute(combined.coordinates, intent, index);
+            if (!best || score > best.score) best = { route: combined, wp, score };
+          } catch {
+            continue;
+          }
+        }
+        if (best) {
+          oneWayRoute = best.route;
+          waypoint = best.wp;
+        } else {
+          const boundary = await fetchIsochrone(loopOrigin[0], loopOrigin[1], fullDurationSeconds);
+          waypoint = pickWaypointFromBoundary(
+            intent,
+            boundary,
+            loopOrigin[0],
+            loopOrigin[1],
+            index,
+            MAX_ROUTE_DISTANCE_M,
+            null
+          );
+        }
       } else {
         const boundary = await fetchIsochrone(loopOrigin[0], loopOrigin[1], fullDurationSeconds);
         waypoint = pickWaypointFromBoundary(
@@ -3104,20 +3163,22 @@ export async function POST(req: NextRequest) {
           null
         );
       }
-      const orsRoutes = await fetchOrsRoutes(loopOrigin, waypoint, intent, forceAvoidZones);
-      let oneWayRoute = orsRoutes[0];
-      if (!oneWayRoute) throw new Error("No one-way route from ORS");
-      if (isLoop) {
-        const returnRoutes = await fetchOrsRoutes(waypoint, loopOrigin, intent, forceAvoidZones);
-        if (returnRoutes[0]) {
-          const outCoords = oneWayRoute.coordinates;
-          const backCoords = returnRoutes[0].coordinates;
-          const loopCoords = [...outCoords, ...backCoords.slice(1)];
-          oneWayRoute = {
-            coordinates: loopCoords,
-            duration: oneWayRoute.duration + returnRoutes[0].duration,
-            distance: oneWayRoute.distance + returnRoutes[0].distance,
-          };
+      if (!oneWayRoute) {
+        const orsRoutes = await fetchOrsRoutes(loopOrigin, waypoint, intent, forceAvoidZones);
+        oneWayRoute = orsRoutes[0] ?? null;
+        if (!oneWayRoute) throw new Error("No one-way route from ORS");
+        if (isLoop) {
+          const returnRoutes = await fetchOrsRoutes(waypoint, loopOrigin, intent, forceAvoidZones);
+          if (returnRoutes[0]) {
+            const outCoords = oneWayRoute.coordinates;
+            const backCoords = returnRoutes[0].coordinates;
+            const loopCoords = [...outCoords, ...backCoords.slice(1)];
+            oneWayRoute = {
+              coordinates: loopCoords,
+              duration: oneWayRoute.duration + returnRoutes[0].duration,
+              distance: oneWayRoute.distance + returnRoutes[0].distance,
+            };
+          }
         }
       }
       const { score, breakdown, tags } = scoreRoute(oneWayRoute.coordinates, intent, index);
