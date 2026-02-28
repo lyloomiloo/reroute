@@ -662,8 +662,7 @@ function PageContent() {
                   <button
                     type="button"
                     onClick={handleClearRoute}
-                    className="absolute top-3 right-0 w-8 h-8 flex items-center justify-center text-gray-500 hover:text-black font-mono text-xl leading-none"
-                    style={{ top: 12, right: 16 }}
+                    className="absolute top-0 right-0 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-500 hover:text-black font-mono text-xl leading-none"
                     aria-label="Clear route"
                   >
                     ×
