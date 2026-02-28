@@ -119,26 +119,27 @@ export function isDurationPrompt(
   data: RouteApiResponse
 ): data is DurationPromptResponse {
   if (data == null || typeof data !== "object") return false;
-  const needsDuration = (data as Record<string, unknown>).needs_duration;
+  const needsDuration = (data as unknown as Record<string, unknown>).needs_duration;
   return needsDuration === true || needsDuration === "true";
 }
 
 export function isPlaceOptionsResponse(
   data: RouteApiResponse
 ): data is PlaceOptionsResponse {
-  return "place_options" in data && Array.isArray((data as PlaceOptionsResponse).place_options) && (data as PlaceOptionsResponse).place_options.length > 0 && !("recommended" in data);
+  const r = data as unknown as Record<string, unknown>;
+  return "place_options" in data && Array.isArray(r.place_options) && (r.place_options as unknown[]).length > 0 && !("recommended" in data);
 }
 
 export function isRouteTypePrompt(
   data: RouteApiResponse
 ): data is RouteTypePromptResponse {
-  return "needs_route_type" in data && (data as RouteTypePromptResponse).needs_route_type === true;
+  return "needs_route_type" in data && (data as unknown as Record<string, unknown>).needs_route_type === true;
 }
 
 export function isEdgeCaseResponse(
   data: RouteApiResponse
 ): data is EdgeCaseResponse {
-  return "edge_case" in data && (data as EdgeCaseResponse).edge_case === true;
+  return "edge_case" in data && (data as unknown as Record<string, unknown>).edge_case === true;
 }
 
 const ROUTE_NOT_FOUND_MSG = "Couldn't find a walkable route — try a closer destination.";
