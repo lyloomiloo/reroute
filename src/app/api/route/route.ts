@@ -920,29 +920,73 @@ function clampWaypointToBarcelona(wp: [number, number]): [number, number] {
   ];
 }
 
+/** Options for offsetPerpendicular. */
+interface OffsetPerpendicularOpts {
+  /** 1 = left, -1 = right (relative to from→to). */
+  sign?: number;
+  /** Fraction along segment (0=from, 0.5=midpoint, 1=to). Default 0.5. */
+  along?: number;
+  /** If true, offset in a 45° diagonal direction (between perp and back-to-origin). */
+  diagonal?: boolean;
+}
+
 /** Point ~offsetM meters perpendicular to the line from (fromLat,fromLng) to (toLat,toLng). Used so the return leg takes different streets. */
 function offsetPerpendicular(
   fromLat: number,
   fromLng: number,
   toLat: number,
   toLng: number,
-  offsetM: number = 200
+  offsetM: number = 200,
+  opts?: OffsetPerpendicularOpts
 ): [number, number] {
-  const midLat = (fromLat + toLat) / 2;
-  const midLng = (fromLng + toLng) / 2;
+  const sign = opts?.sign ?? 1;
+  const along = opts?.along ?? 0.5;
+  const diagonal = opts?.diagonal ?? false;
+  const baseLat = fromLat + along * (toLat - fromLat);
+  const baseLng = fromLng + along * (toLng - fromLng);
   const dirLng = toLng - fromLng;
   const dirLat = toLat - fromLat;
-  const perpLat = -dirLng;
-  const perpLng = dirLat;
-  const norm = Math.sqrt(perpLat * perpLat + perpLng * perpLng) || 1;
-  const pLat = perpLat / norm;
-  const pLng = perpLng / norm;
+  let pLat = -dirLng;
+  let pLng = dirLat;
+  if (diagonal) {
+    const perpNorm = Math.sqrt(pLat * pLat + pLng * pLng) || 1;
+    const backLat = -dirLat;
+    const backLng = -dirLng;
+    const backNorm = Math.sqrt(backLat * backLat + backLng * backLng) || 1;
+    pLat = pLat / perpNorm + backLat / backNorm;
+    pLng = pLng / perpNorm + backLng / backNorm;
+  }
+  const norm = Math.sqrt(pLat * pLat + pLng * pLng) || 1;
+  pLat = pLat / norm;
+  pLng = pLng / norm;
   const latDegPerM = 1 / 111320;
-  const midLatRad = (midLat * Math.PI) / 180;
-  const lngDegPerM = 1 / (111320 * Math.cos(midLatRad));
-  const offsetLat = midLat + (offsetM * pLat) * latDegPerM;
-  const offsetLng = midLng + (offsetM * pLng) * lngDegPerM;
+  const baseLatRad = (baseLat * Math.PI) / 180;
+  const lngDegPerM = 1 / (111320 * Math.cos(baseLatRad));
+  const effectiveOffset = offsetM * sign;
+  const offsetLat = baseLat + (effectiveOffset * pLat) * latDegPerM;
+  const offsetLng = baseLng + (effectiveOffset * pLng) * lngDegPerM;
   return [offsetLat, offsetLng];
+}
+
+/** Fraction of return coords that are within thresholdM of any outbound coord. Coords are [lng, lat] (ORS order). */
+function fractionReturnNearOutbound(
+  outboundCoords: [number, number][],
+  returnCoords: [number, number][],
+  thresholdM: number
+): number {
+  if (returnCoords.length === 0) return 0;
+  let near = 0;
+  for (const r of returnCoords) {
+    const rLat = r[1];
+    const rLng = r[0];
+    for (const o of outboundCoords) {
+      if (distMeters([o[1], o[0]], [rLat, rLng]) <= thresholdM) {
+        near += 1;
+        break;
+      }
+    }
+  }
+  return near / returnCoords.length;
 }
 
 function pickWaypointFromBoundary(
@@ -3451,14 +3495,39 @@ export async function POST(req: NextRequest) {
         const bearingOffset = typeof retryCount === "number" ? retryCount * 111 : 0;
         let best: { route: RouteSegment; wp: [number, number]; score: number } | null = null;
         for (let attempt = 0; attempt < 3; attempt++) {
+          const sign = attempt === 0 ? 1 : attempt === 1 ? -1 : 1;
+          const diagonal = attempt === 2;
           const bearing = (Math.random() * 360 + bearingOffset) % 360;
           const wp = clampWaypointToBarcelona(waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, bearing));
           try {
             const outRoutes = await fetchOrsRoutes(loopOrigin, wp, intent, forceAvoidZones);
             if (!outRoutes[0]) continue;
-            const returnOffset = offsetPerpendicular(wp[0], wp[1], loopOrigin[0], loopOrigin[1], 200);
-            const returnRoute = await fetchOrsWaypointRoute(wp, [returnOffset, loopOrigin], intent, forceAvoidZones);
-            const loopCoords = [...outRoutes[0].coordinates, ...returnRoute.coordinates.slice(1)] as [number, number][];
+            const returnOffset1 = offsetPerpendicular(
+              wp[0],
+              wp[1],
+              loopOrigin[0],
+              loopOrigin[1],
+              400,
+              { sign, along: 0.5, diagonal }
+            );
+            const returnOffset2 = offsetPerpendicular(
+              wp[0],
+              wp[1],
+              loopOrigin[0],
+              loopOrigin[1],
+              200,
+              { sign: -sign, along: 1 / 3, diagonal: false }
+            );
+            const returnRoute = await fetchOrsWaypointRoute(
+              wp,
+              [returnOffset1, returnOffset2, loopOrigin],
+              intent,
+              forceAvoidZones
+            );
+            const outboundCoords = outRoutes[0].coordinates;
+            const returnCoords = returnRoute.coordinates.slice(1);
+            if (fractionReturnNearOutbound(outboundCoords, returnCoords, 30) > 0.4) continue;
+            const loopCoords = [...outboundCoords, ...returnCoords] as [number, number][];
             const combined: RouteSegment = {
               coordinates: loopCoords,
               duration: outRoutes[0].duration + returnRoute.duration,
@@ -3547,14 +3616,39 @@ export async function POST(req: NextRequest) {
           const bearingOffset = typeof retryCount === "number" ? retryCount * 111 : 0;
           let loopBest: { route: RouteSegment; wp: [number, number]; score: number } | null = null;
           for (let attempt = 0; attempt < 3; attempt++) {
+            const sign = attempt === 0 ? 1 : attempt === 1 ? -1 : 1;
+            const diagonal = attempt === 2;
             const bearing = (Math.random() * 360 + bearingOffset) % 360;
             const wp = clampWaypointToBarcelona(waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, bearing));
             try {
               const outRoutes = await fetchOrsRoutes(loopOrigin, wp, intent, forceAvoidZones);
               if (!outRoutes[0]) continue;
-              const returnOffset = offsetPerpendicular(wp[0], wp[1], loopOrigin[0], loopOrigin[1], 200);
-              const returnRoute = await fetchOrsWaypointRoute(wp, [returnOffset, loopOrigin], intent, forceAvoidZones);
-              const loopCoords = [...outRoutes[0].coordinates, ...returnRoute.coordinates.slice(1)] as [number, number][];
+              const returnOffset1 = offsetPerpendicular(
+                wp[0],
+                wp[1],
+                loopOrigin[0],
+                loopOrigin[1],
+                400,
+                { sign, along: 0.5, diagonal }
+              );
+              const returnOffset2 = offsetPerpendicular(
+                wp[0],
+                wp[1],
+                loopOrigin[0],
+                loopOrigin[1],
+                200,
+                { sign: -sign, along: 1 / 3, diagonal: false }
+              );
+              const returnRoute = await fetchOrsWaypointRoute(
+                wp,
+                [returnOffset1, returnOffset2, loopOrigin],
+                intent,
+                forceAvoidZones
+              );
+              const outboundCoords = outRoutes[0].coordinates;
+              const returnCoords = returnRoute.coordinates.slice(1);
+              if (fractionReturnNearOutbound(outboundCoords, returnCoords, 30) > 0.4) continue;
+              const loopCoords = [...outboundCoords, ...returnCoords] as [number, number][];
               const combined: RouteSegment = {
                 coordinates: loopCoords,
                 duration: outRoutes[0].duration + returnRoute.duration,
@@ -3584,8 +3678,9 @@ export async function POST(req: NextRequest) {
             const orsRoutes = await fetchOrsRoutes(loopOrigin, waypoint, intent, forceAvoidZones);
             oneWayRoute = orsRoutes[0] ?? null;
             if (oneWayRoute) {
-              const returnOffset = offsetPerpendicular(waypoint[0], waypoint[1], loopOrigin[0], loopOrigin[1], 200);
-              const returnRoute = await fetchOrsWaypointRoute(waypoint, [returnOffset, loopOrigin], intent, forceAvoidZones);
+              const returnOffset1 = offsetPerpendicular(waypoint[0], waypoint[1], loopOrigin[0], loopOrigin[1], 400);
+              const returnOffset2 = offsetPerpendicular(waypoint[0], waypoint[1], loopOrigin[0], loopOrigin[1], 200, { along: 1 / 3, sign: -1 });
+              const returnRoute = await fetchOrsWaypointRoute(waypoint, [returnOffset1, returnOffset2, loopOrigin], intent, forceAvoidZones);
               oneWayRoute = {
                 coordinates: [...oneWayRoute.coordinates, ...returnRoute.coordinates.slice(1)] as [number, number][],
                 duration: oneWayRoute.duration + returnRoute.duration,
@@ -3626,8 +3721,9 @@ export async function POST(req: NextRequest) {
           }
         }
         if (isLoop && !builtAsLoopInFallback && oneWayRoute) {
-          const returnOffset = offsetPerpendicular(waypoint[0], waypoint[1], loopOrigin[0], loopOrigin[1], 200);
-          const returnRoute = await fetchOrsWaypointRoute(waypoint, [returnOffset, loopOrigin], intent, forceAvoidZones);
+          const returnOffset1 = offsetPerpendicular(waypoint[0], waypoint[1], loopOrigin[0], loopOrigin[1], 400);
+          const returnOffset2 = offsetPerpendicular(waypoint[0], waypoint[1], loopOrigin[0], loopOrigin[1], 200, { along: 1 / 3, sign: -1 });
+          const returnRoute = await fetchOrsWaypointRoute(waypoint, [returnOffset1, returnOffset2, loopOrigin], intent, forceAvoidZones);
           const outCoords = oneWayRoute.coordinates;
           const loopCoords = [...outCoords, ...returnRoute.coordinates.slice(1)];
           oneWayRoute = {
@@ -3671,8 +3767,9 @@ export async function POST(req: NextRequest) {
           if (isLoop) {
             const outRoutes = await fetchOrsRoutes(loopOrigin, closerWp, intent, forceAvoidZones);
             if (outRoutes[0]) {
-              const returnOffset = offsetPerpendicular(closerWp[0], closerWp[1], loopOrigin[0], loopOrigin[1], 150);
-              const returnRoute = await fetchOrsWaypointRoute(closerWp, [returnOffset, loopOrigin], intent, forceAvoidZones);
+              const returnOffset1 = offsetPerpendicular(closerWp[0], closerWp[1], loopOrigin[0], loopOrigin[1], 400);
+              const returnOffset2 = offsetPerpendicular(closerWp[0], closerWp[1], loopOrigin[0], loopOrigin[1], 200, { along: 1 / 3, sign: -1 });
+              const returnRoute = await fetchOrsWaypointRoute(closerWp, [returnOffset1, returnOffset2, loopOrigin], intent, forceAvoidZones);
               retryRoute = {
                 coordinates: [...outRoutes[0].coordinates, ...returnRoute.coordinates.slice(1)] as [number, number][],
                 duration: outRoutes[0].duration + returnRoute.duration,

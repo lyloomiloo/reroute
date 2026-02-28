@@ -621,7 +621,7 @@ export default function MapViewClient({
     toastTimeoutRef.current = setTimeout(() => {
       setToastPoi(null);
       toastTimeoutRef.current = null;
-    }, 8000);
+    }, 10000);
     return () => {
       if (toastTimeoutRef.current) {
         clearTimeout(toastTimeoutRef.current);
@@ -681,18 +681,11 @@ export default function MapViewClient({
       {typeof document !== "undefined" &&
         toastPoi &&
         createPortal(
-          <div
-            className="fixed left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] max-w-sm bg-white rounded-lg shadow-lg overflow-hidden animate-slide-up"
-            style={{
-              bottom: "12rem",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-              zIndex: 150,
-            }}
-            role="status"
-            aria-live="polite"
-          >
+          <>
             <button
               type="button"
+              className="fixed inset-0 z-[149] bg-black/20"
+              aria-label="Dismiss"
               onClick={() => {
                 setToastPoi(null);
                 if (toastTimeoutRef.current) {
@@ -700,66 +693,96 @@ export default function MapViewClient({
                   toastTimeoutRef.current = null;
                 }
               }}
-              className="absolute right-2 top-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-black/10 hover:bg-black/20 font-mono text-gray-600 hover:text-gray-900 text-sm"
-              aria-label="Dismiss"
+            />
+            <div
+              className="fixed left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] max-w-[280px] bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden animate-slide-up"
+              style={{ bottom: "12rem", zIndex: 150 }}
+              role="status"
+              aria-live="polite"
+              onClick={(e) => e.stopPropagation()}
             >
-              ✕
-            </button>
-            {(() => {
-              const photoUrls =
-                (toastPoi.photo_urls?.length ?? 0) > 0
-                  ? toastPoi.photo_urls
-                  : toastPoi.photo_url
-                    ? [toastPoi.photo_url]
-                    : toastPoi.placeId
-                      ? [`/api/place-photo?name=places/${encodeURIComponent(toastPoi.placeId)}/photos/default`]
-                      : [];
-              const hasPhoto = (photoUrls ?? []).length > 0;
-              if (!hasPhoto) return null;
-              if ((photoUrls ?? []).length > 1) {
-                return (
-                  <div className="w-full h-[120px] overflow-hidden rounded-t-lg flex-shrink-0 bg-gray-100">
-                    <div
-                      className="flex overflow-x-auto h-full scrollbar-hide snap-x snap-mandatory w-full"
-                      style={{ WebkitOverflowScrolling: "touch" }}
-                    >
-                      {(photoUrls ?? []).map((url, j) => (
-                        <img
-                          key={j}
-                          src={url}
-                          alt=""
-                          className="w-full h-full flex-shrink-0 object-cover snap-start min-w-[200px]"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = "none";
-                          }}
-                        />
-                      ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setToastPoi(null);
+                  if (toastTimeoutRef.current) {
+                    clearTimeout(toastTimeoutRef.current);
+                    toastTimeoutRef.current = null;
+                  }
+                }}
+                className="absolute right-2 top-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-black/20 hover:bg-black/30 text-white font-mono text-sm"
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+              {(() => {
+                const photoUrls =
+                  (toastPoi.photo_urls?.length ?? 0) > 0
+                    ? toastPoi.photo_urls
+                    : toastPoi.photo_url
+                      ? [toastPoi.photo_url]
+                      : toastPoi.placeId
+                        ? [`/api/place-photo?name=places/${encodeURIComponent(toastPoi.placeId)}/photos/default`]
+                        : [];
+                const hasPhoto = (photoUrls ?? []).length > 0;
+                if (!hasPhoto) return null;
+                if ((photoUrls ?? []).length > 1) {
+                  return (
+                    <div className="relative w-full h-[130px] overflow-hidden rounded-t-lg flex-shrink-0 bg-gray-100">
+                      <div
+                        className="flex overflow-x-auto h-full scrollbar-hide snap-x snap-mandatory w-full"
+                        style={{ WebkitOverflowScrolling: "touch" }}
+                      >
+                        {(photoUrls ?? []).map((url, j) => (
+                          <img
+                            key={j}
+                            src={url}
+                            alt=""
+                            className="w-full h-full flex-shrink-0 object-cover snap-start min-w-full"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = "none";
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <div
+                        className="absolute left-0 top-0 bottom-0 w-6 flex items-center justify-center bg-gradient-to-r from-black/30 to-transparent pointer-events-none"
+                        aria-hidden
+                      >
+                        <span className="text-white text-sm">‹</span>
+                      </div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-6 flex items-center justify-center bg-gradient-to-l from-black/30 to-transparent pointer-events-none"
+                        aria-hidden
+                      >
+                        <span className="text-white text-sm">›</span>
+                      </div>
                     </div>
+                  );
+                }
+                return (
+                  <div className="w-full h-[130px] overflow-hidden rounded-t-lg flex-shrink-0 bg-gray-100">
+                    <img
+                      src={(photoUrls ?? [])[0]}
+                      alt={toastPoi.name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
                   </div>
                 );
-              }
-              return (
-                <div className="w-full h-[120px] overflow-hidden rounded-t-lg flex-shrink-0 bg-gray-100">
-                  <img
-                    src={(photoUrls ?? [])[0]}
-                    alt={toastPoi.name}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                    }}
-                  />
-                </div>
-              );
-            })()}
-            <div
-              className={`p-3 relative ${toastPoi.photo_url || toastPoi.photo_urls?.length || toastPoi.placeId ? "pt-2" : "pt-10"}`}
-            >
-              <p className="font-mono font-bold text-sm text-gray-900 pr-8">{toastPoi.name}</p>
-              {toastPoi.description ? (
-                <p className="font-mono text-xs text-gray-500 mt-1 line-clamp-3">{toastPoi.description}</p>
-              ) : null}
+              })()}
+              <div
+                className={`p-3 relative ${toastPoi.photo_url || (toastPoi.photo_urls?.length ?? 0) > 0 || toastPoi.placeId ? "pt-2" : "pt-10"}`}
+              >
+                <p className="font-mono font-bold text-sm text-gray-900 pr-8">{toastPoi.name}</p>
+                {toastPoi.description ? (
+                  <p className="font-mono text-xs text-gray-500 mt-1 line-clamp-3">{toastPoi.description}</p>
+                ) : null}
+              </div>
             </div>
-          </div>,
+          </>,
           document.body
         )}
       <MapContainer
