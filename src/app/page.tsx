@@ -927,7 +927,7 @@ function PageContent() {
                         <button
                           type="button"
                           onClick={() => applyStartPointResult(startPointResults[0])}
-                          className="mt-1.5 text-left text-base text-green-700 reroute-uppercase hover:text-green-800 hover:underline cursor-pointer py-3 px-4"
+                          className="mt-1.5 text-left text-[11.2px] text-green-700 reroute-uppercase hover:text-green-800 hover:underline cursor-pointer py-3 px-4"
                         >
                           ✓ {startPointResults[0].displayName}
                         </button>
@@ -939,7 +939,7 @@ function PageContent() {
                               key={`${r.lat}-${r.lng}`}
                               type="button"
                               onClick={() => applyStartPointResult(r)}
-                              className={`text-left text-base py-3 px-4 rounded border reroute-uppercase transition-colors ${
+                              className={`text-left text-[11.2px] py-3 px-4 rounded border reroute-uppercase transition-colors ${
                                 startPointSelectedIndex === i
                                   ? "border-green-600 bg-green-50 text-green-800"
                                   : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
