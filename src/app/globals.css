@@ -100,13 +100,17 @@ body {
   animation: user-location-pulse 2s ease-in-out infinite;
 }
 
-@keyframes breathe {
-  0%, 100% {
+@keyframes pulse-ring {
+  0% {
     transform: scale(1);
-    opacity: 0.12;
+    opacity: 0.3;
   }
   50% {
-    transform: scale(2.5);
+    transform: scale(1.4);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
     opacity: 0;
   }
 }
@@ -118,21 +122,21 @@ body {
 }
 
 .start-pulse::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: black;
-  opacity: 0.5;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1.5px solid #000;
 }
 
 .start-pulse::after {
-  content: '';
+  content: "";
   position: absolute;
-  inset: -4px;
+  inset: -2px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0) 70%);
-  animation: breathe 4s ease-in-out infinite;
+  border: 2px solid #000;
+  animation: pulse-ring 4s ease-in-out infinite;
 }
 
 @keyframes countdown-dot-blink {
