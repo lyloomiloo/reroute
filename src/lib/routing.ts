@@ -129,11 +129,12 @@ const ROUTE_NOT_FOUND_MSG = "Couldn't find a walkable route — try a closer des
 export async function getRoute(
   origin: [number, number],
   moodText: string,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal; forceNightMode?: boolean }
 ): Promise<RouteApiResponse> {
   const body = {
     origin,
     moodText: moodText.trim(),
+    ...(options?.forceNightMode === true && { forceNightMode: true }),
   };
   const res = await fetch("/api/route", {
     method: "POST",
@@ -197,12 +198,13 @@ export async function getRouteWithDuration(
   origin: [number, number],
   moodText: string,
   durationMinutes: number,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal; forceNightMode?: boolean }
 ): Promise<RoutesResponse> {
   const body = {
     origin,
     moodText: moodText.trim(),
     duration: durationMinutes,
+    ...(options?.forceNightMode === true && { forceNightMode: true }),
   };
 
   const res = await fetch("/api/route", {
@@ -239,7 +241,7 @@ export async function getRouteWithDestination(
   origin: [number, number],
   destination: [number, number],
   intent: Intent,
-  options?: { destination_name?: string; destination_address?: string; destination_place_type?: string | null; signal?: AbortSignal }
+  options?: { destination_name?: string; destination_address?: string; destination_place_type?: string | null; signal?: AbortSignal; forceNightMode?: boolean }
 ): Promise<RoutesResponse> {
   const res = await fetch("/api/route", {
     method: "POST",
@@ -252,6 +254,7 @@ export async function getRouteWithDestination(
       destination_name: options?.destination_name ?? null,
       destination_address: options?.destination_address ?? null,
       destination_place_type: options?.destination_place_type ?? null,
+      ...(options?.forceNightMode === true && { forceNightMode: true }),
     }),
     signal: options?.signal,
   });

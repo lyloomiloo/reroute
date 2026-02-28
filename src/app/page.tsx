@@ -113,6 +113,8 @@ function PageContent() {
   const [destinationRating, setDestinationRating] = useState<number | null>(null);
   const [time, setTime] = useState(new Date());
   const [colonVisible, setColonVisible] = useState(true);
+  /** Dev/QA: override night mode for testing without changing env (remove or hide behind feature flag later). */
+  const [nightModeOverride, setNightModeOverride] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [remainingDistance, setRemainingDistance] = useState<string>("—");
   const [remainingTime, setRemainingTime] = useState<string>("—");
@@ -203,7 +205,7 @@ function PageContent() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ROUTE_TIMEOUT_MS);
     try {
-      const result = await getRoute(origin, text, { signal: controller.signal });
+      const result = await getRoute(origin, text, { signal: controller.signal, forceNightMode: nightModeOverride });
       if (isEdgeCaseResponse(result)) {
         clearTimeout(timeout);
         setEdgeCaseMessage(result.message);
@@ -216,7 +218,7 @@ function PageContent() {
         if (durationResult.skip_duration) {
           const duration =
             durationResult.auto_duration ?? [10, 20, 40][Math.floor(Math.random() * 3)];
-          const routeResult = await getRouteWithDuration(origin, text, duration, { signal: controller.signal });
+          const routeResult = await getRouteWithDuration(origin, text, duration, { signal: controller.signal, forceNightMode: nightModeOverride });
           clearTimeout(timeout);
           setRoutes(routeResult as RoutesResponse);
           setLastRouteMoodText(text);
@@ -284,6 +286,7 @@ function PageContent() {
         body: JSON.stringify({
           ...lastPlaceQuery,
           search_offset: placeOptions?.length ?? 0,
+          forceNightMode: nightModeOverride,
         }),
       });
       const data = await res.json();
@@ -304,7 +307,7 @@ function PageContent() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ROUTE_TIMEOUT_MS);
     try {
-      const result = await getRoute(origin, lastRouteMoodText, { signal: controller.signal });
+      const result = await getRoute(origin, lastRouteMoodText, { signal: controller.signal, forceNightMode: nightModeOverride });
       clearTimeout(timeout);
       if (isEdgeCaseResponse(result) || isDurationPrompt(result) || isPlaceOptionsResponse(result)) return;
       setRoutes(result as RoutesResponse);
@@ -325,7 +328,7 @@ function PageContent() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ROUTE_TIMEOUT_MS);
     try {
-      const result = await getRouteWithDuration(origin, moodInput, minutes, { signal: controller.signal });
+      const result = await getRouteWithDuration(origin, moodInput, minutes, { signal: controller.signal, forceNightMode: nightModeOverride });
       console.log(
         "[frontend] highlights received:",
         JSON.stringify(
@@ -472,6 +475,7 @@ function PageContent() {
         destination_address: place.description ?? undefined,
         destination_place_type: place.primary_type ?? undefined,
         signal: controller.signal,
+        forceNightMode: nightModeOverride,
       });
       clearTimeout(timeout);
       const destHighlight = result.recommended?.highlights?.find((h) => h.type === "destination");
@@ -507,6 +511,16 @@ function PageContent() {
   const destinationPhotoResolved = destinationPhoto ?? destinationHighlight?.photo_url ?? destinationHighlight?.photo_urls?.[0];
 
   const appContent = (
+    <>
+      {/* Dev/QA: night mode toggle — remove or hide behind feature flag later */}
+      <button
+        type="button"
+        onClick={() => setNightModeOverride((v) => !v)}
+        className="fixed top-2 right-2 z-50 bg-black/80 text-white text-[10px] px-2 py-1 rounded font-mono"
+        aria-label={nightModeOverride ? "Switch to day mode" : "Switch to night mode"}
+      >
+        {nightModeOverride ? "🌙 NIGHT" : "☀️ DAY"}
+      </button>
       <PhoneFrame>
       {!startInputFocused && (
         <div className="fixed top-2 left-2 z-40 bg-white/40 border border-gray-300 px-0.5 pt-0 pb-0.5">
@@ -664,16 +678,16 @@ function PageContent() {
               </div>
             )}
             {routes && !isNavigating && (
-              <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-4 pt-4 pb-6 z-[100]">
-                <div className="max-w-md mx-auto relative">
-                  <button
-                    type="button"
-                    onClick={handleClearRoute}
-                    className="absolute top-0 right-0 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-500 hover:text-black font-mono text-xl leading-none"
-                    aria-label="Clear route"
-                  >
-                    ×
-                  </button>
+              <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-4 pt-4 pb-6 z-[100] relative">
+                <button
+                  type="button"
+                  onClick={handleClearRoute}
+                  className="absolute top-3 right-3 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-500 hover:text-black font-mono text-xl leading-none"
+                  aria-label="Clear route"
+                >
+                  ×
+                </button>
+                <div className="max-w-md mx-auto">
                   {(() => {
                     const active = routes.quick && showQuick ? routes.quick : routes.recommended;
                     return (
@@ -1097,6 +1111,7 @@ function PageContent() {
           </>
       </div>
     </PhoneFrame>
+    </>
     );
 
   return appContent;
