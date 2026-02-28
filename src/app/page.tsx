@@ -704,14 +704,8 @@ function PageContent() {
               previewPois={
                 routes && !isNavigating
                   ? (() => {
-                      const pattern = routes.pattern;
-                      const intent = routes.intent;
-                      const isLoop = routes.isLoop ?? false;
-                      const showPreviewPois =
-                        (pattern === "mood_only" && !isLoop && (intent === "discover" || intent === "scenic" || intent === "lively")) ||
-                        pattern === "themed_walk";
                       const active = showQuick && routes.quick ? routes.quick : routes.recommended;
-                      return showPreviewPois && active?.pois?.length ? active.pois : null;
+                      return active?.pois?.length ? active.pois : null;
                     })()
                   : null
               }

@@ -20,13 +20,36 @@ const POI_DOT_ICON = L.divIcon({
   iconAnchor: [5, 5],
 });
 
-/** 8px dark dot for route PREVIEW only — no label; tap shows toast. Real POIs only. */
+/** 8px dark charcoal dot for route PREVIEW only — no label; tap shows toast. Real POIs only. */
 const PREVIEW_POI_DOT_ICON = L.divIcon({
   html: `<div style="width:8px;height:8px;border-radius:50%;background:#2a2a2a;border:1px solid white;box-shadow:0 1px 2px rgba(0,0,0,0.25);cursor:pointer;"></div>`,
   className: "custom-pin-no-default",
   iconSize: [8, 8],
   iconAnchor: [4, 4],
 });
+
+/** Generic/street-quality names that should not get a POI dot on preview. */
+const GENERIC_POI_NAME_PATTERNS = [
+  /^lively\s+area$/i,
+  /^calm\s+area$/i,
+  /^tree-lined\s+stretch$/i,
+  /^quiet\s+stretch$/i,
+  /^scenic\s+stretch$/i,
+  /^peaceful\s+(block|stretch|area)$/i,
+  /^green\s+(path|stretch|area)$/i,
+  /^historic\s+stretch$/i,
+  /^well-kept\s+street/i,
+  /^pedestrian\s+(walk|stretch|area)$/i,
+  /^discover\s+area$/i,
+  /^nature\s+area$/i,
+  /^cafe\s+area$/i,
+  /^exercise\s+area$/i,
+];
+function isGenericPoiName(name: string): boolean {
+  const t = name.trim();
+  if (!t) return true;
+  return GENERIC_POI_NAME_PATTERNS.some((re) => re.test(t));
+}
 
 /** Semi-transparent polyline color per route intent. themed_walk uses discover (purple). */
 const ROUTE_INTENT_COLORS: Record<string, { color: string; opacity: number }> = {
@@ -805,10 +828,13 @@ export default function MapViewClient({
           const allHighlights = isNavigating || showPoiInPreview ? (highlights ?? []) : [];
           const isRealPoi = (h: RouteHighlight) => !!h.placeId;
           const hasName = (h: RouteHighlight) => (h.name ?? h.label ?? "").trim() !== "";
-          const visibleHighlights = (isNavigating
-            ? allHighlights
-            : allHighlights.filter((h) => h.type === "destination" || isRealPoi(h))
-          ).filter(hasName);
+          const hasRealName = (h: RouteHighlight) => {
+            const n = (h.name ?? h.label ?? "").trim();
+            return n !== "" && !isGenericPoiName(n);
+          };
+          const visibleHighlights = isNavigating
+            ? allHighlights.filter(hasName)
+            : allHighlights.filter((h) => h.type === "destination" || isRealPoi(h)).filter(hasRealName);
           return visibleHighlights.map((h, i) => {
             const isDestination = h.type === "destination";
             const isPoiSeen = isNavigating && seenPoiKeys.has(poiKey(h.lat, h.lng));
@@ -848,7 +874,10 @@ export default function MapViewClient({
         })()}
         {previewPois && previewPois.length > 0 && !isNavigating &&
           previewPois
-            .filter((poi) => (poi.name ?? "").trim() !== "")
+            .filter((poi) => {
+              const name = (poi.name ?? "").trim();
+              return name !== "" && !isGenericPoiName(name);
+            })
             .map((poi, i) => (
               <Marker
                 key={`preview-poi-${i}-${poi.lat}-${poi.lng}`}
