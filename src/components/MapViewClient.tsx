@@ -714,16 +714,16 @@ export default function MapViewClient({
                     : toastPoi.placeId
                       ? [`/api/place-photo?name=places/${encodeURIComponent(toastPoi.placeId)}/photos/default`]
                       : [];
-              const hasPhoto = photoUrls.length > 0;
+              const hasPhoto = (photoUrls ?? []).length > 0;
               if (!hasPhoto) return null;
-              if (photoUrls.length > 1) {
+              if ((photoUrls ?? []).length > 1) {
                 return (
                   <div className="w-full h-[120px] overflow-hidden rounded-t-lg flex-shrink-0 bg-gray-100">
                     <div
                       className="flex overflow-x-auto h-full scrollbar-hide snap-x snap-mandatory w-full"
                       style={{ WebkitOverflowScrolling: "touch" }}
                     >
-                      {photoUrls.map((url, j) => (
+                      {(photoUrls ?? []).map((url, j) => (
                         <img
                           key={j}
                           src={url}
@@ -741,7 +741,7 @@ export default function MapViewClient({
               return (
                 <div className="w-full h-[120px] overflow-hidden rounded-t-lg flex-shrink-0 bg-gray-100">
                   <img
-                    src={photoUrls[0]}
+                    src={(photoUrls ?? [])[0]}
                     alt={toastPoi.name}
                     className="w-full h-full object-cover"
                     onError={(e) => {
