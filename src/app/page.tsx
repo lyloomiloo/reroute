@@ -105,7 +105,7 @@ function PageContent() {
   const [edgeCaseSuggestion, setEdgeCaseSuggestion] = useState<string | null>(null);
   const [edgeCaseTheme, setEdgeCaseTheme] = useState<string | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
-  /** Last mood text used to fetch current route; used by "Try another route" for mood_and_area. */
+  /** Last mood text used to fetch current route; used by "Try another" for mood_and_area. */
   const [lastRouteMoodText, setLastRouteMoodText] = useState<string>("");
   /** Destination POI from place selection (GO); used for pin popup. Cleared when route is dismissed or new search. */
   const [destinationPhoto, setDestinationPhoto] = useState<string | null>(null);
@@ -571,104 +571,6 @@ function PageContent() {
               </div>
             )}
             <div className="flex-1 relative min-h-0">
-            {/* TEMP: Remove before deploy */}
-            <button
-              type="button"
-              onClick={() => {
-                const originCoords = customStart?.coords ?? mapCenter ?? BARCELONA_CENTER;
-                const fakeLat = originCoords[0];
-                const fakeLng = originCoords[1];
-                const fakeRouteLngLat: [number, number][] = [
-                  [fakeLng, fakeLat],
-                  [fakeLng, fakeLat + 0.003],
-                  [fakeLng + 0.004, fakeLat + 0.003],
-                  [fakeLng + 0.004, fakeLat],
-                  [fakeLng + 0.002, fakeLat - 0.002],
-                ];
-                const last = fakeRouteLngLat[fakeRouteLngLat.length - 1];
-                const endPoint: [number, number] = [last[1], last[0]];
-                const fakeHighlights: RouteHighlight[] = [
-                  {
-                    lat: fakeLat + 0.0001,
-                    lng: fakeLng + 0.0001,
-                    label: "Mercat de la Boqueria",
-                    type: "market",
-                    name: "Mercat de la Boqueria",
-                    description: "Historic market, fresh produce since 1217",
-                    placeId: "ChIJE0iRRQmipBIRRMbSqM3VDwQ",
-                    photoRef: null as string | null,
-                  },
-                  {
-                    lat: fakeLat + 0.002,
-                    lng: fakeLng + 0.003,
-                    label: "Basilica de Santa Maria del Mar",
-                    type: "landmark",
-                    name: "Basilica de Santa Maria del Mar",
-                    description: "Stunning 14th-century Gothic church",
-                    placeId: "ChIJo8VKtHujpBIRBWdWNFW7yts",
-                    photoRef: null as string | null,
-                  },
-                  {
-                    lat: fakeLat + 0.0015,
-                    lng: fakeLng + 0.002,
-                    label: "El Magnífico",
-                    type: "cafe",
-                    name: "El Magnífico",
-                    description: "Specialty coffee roasters since 1919",
-                    placeId: "ChIJPeByD_6ipBIRS6hspV6vfyc",
-                    photoRef: null as string | null,
-                  },
-                  {
-                    lat: endPoint[0],
-                    lng: endPoint[1],
-                    label: "Test Destination",
-                    type: "destination",
-                    name: "Test Destination",
-                    description: "End of test route",
-                  },
-                  {
-                    lat: endPoint[0] + 0.00002,
-                    lng: endPoint[1] + 0.00002,
-                    label: "Near finish",
-                    type: "landmark",
-                    name: "Near finish",
-                    description: "POI near end for arrival test",
-                    placeId: "test-near-finish",
-                    photoRef: null as string | null,
-                  },
-                ];
-                setRoutes({
-                  recommended: {
-                    coordinates: fakeRouteLngLat,
-                    duration: 900,
-                    distance: 1200,
-                    summary: "Tree-lined streets, low noise, park views",
-                    score: 0.85,
-                    breakdown: { noise: 0.2, green: 0.4, clean: 0.2, cultural: 0.2 },
-                    highlights: fakeHighlights,
-                  },
-                  quick: null,
-                  destination_name: "Test Destination",
-                  destination_address: null,
-                  pattern: "mood_only",
-                  intent: "calm",
-                  end_point: endPoint,
-                });
-                setRouteError(null);
-              }}
-              className="absolute top-16 left-4 z-[9999] bg-red-500 text-white px-3 py-1 rounded text-xs font-mono"
-            >
-              TEST ROUTE
-            </button>
-            {isNavigating && !hasArrived && (
-              <button
-                type="button"
-                onClick={() => setHasArrived(true)}
-                className="absolute top-28 left-4 z-[9999] bg-red-500 text-white px-3 py-1 rounded text-xs font-mono"
-              >
-                TEST ARRIVE
-              </button>
-            )}
             {isLoading && (
               <div className="absolute inset-0 bg-white/80 z-[50] flex flex-col items-center justify-center">
                 <pre className="loading-walker text-[10px] leading-[1.2] text-black font-mono whitespace-pre text-center" aria-hidden>
@@ -818,7 +720,7 @@ function PageContent() {
                               disabled={isLoading}
                               className="flex-1 py-3 border border-gray-300 text-gray-700 text-sm reroute-uppercase font-medium rounded-none hover:bg-gray-50 disabled:opacity-50"
                             >
-                              ↻ Try another route
+                              ↻ Try another
                             </button>
                           )}
                           <button
@@ -1025,7 +927,7 @@ function PageContent() {
                         <button
                           type="button"
                           onClick={() => applyStartPointResult(startPointResults[0])}
-                          className="mt-1.5 text-left text-[10px] text-green-700 reroute-uppercase hover:text-green-800 hover:underline cursor-pointer"
+                          className="mt-1.5 text-left text-base text-green-700 reroute-uppercase hover:text-green-800 hover:underline cursor-pointer py-3 px-4"
                         >
                           ✓ {startPointResults[0].displayName}
                         </button>
@@ -1037,7 +939,7 @@ function PageContent() {
                               key={`${r.lat}-${r.lng}`}
                               type="button"
                               onClick={() => applyStartPointResult(r)}
-                              className={`text-left text-[10px] py-1 px-1.5 rounded border reroute-uppercase transition-colors ${
+                              className={`text-left text-base py-3 px-4 rounded border reroute-uppercase transition-colors ${
                                 startPointSelectedIndex === i
                                   ? "border-green-600 bg-green-50 text-green-800"
                                   : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
