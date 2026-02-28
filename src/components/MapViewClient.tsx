@@ -19,6 +19,14 @@ const POI_DOT_ICON = L.divIcon({
   iconAnchor: [5, 5],
 });
 
+/** 8px dark dot for route PREVIEW only — no label; tap shows toast. Real POIs only. */
+const PREVIEW_POI_DOT_ICON = L.divIcon({
+  html: `<div style="width:8px;height:8px;border-radius:50%;background:#2a2a2a;border:1px solid white;box-shadow:0 1px 2px rgba(0,0,0,0.25);cursor:pointer;"></div>`,
+  className: "custom-pin-no-default",
+  iconSize: [8, 8],
+  iconAnchor: [4, 4],
+});
+
 /** Semi-transparent polyline color per route intent. themed_walk uses discover (purple). */
 const ROUTE_INTENT_COLORS: Record<string, { color: string; opacity: number }> = {
   calm: { color: "rgb(134, 169, 134)", opacity: 0.6 },
@@ -789,31 +797,29 @@ export default function MapViewClient({
         )}
         {(() => {
           const showPoiInPreview = ["discover", "scenic", "lively", "cafe"].includes(routeIntent ?? "");
-          const visibleHighlights =
-            isNavigating || showPoiInPreview ? (highlights ?? []) : [];
+          const allHighlights = isNavigating || showPoiInPreview ? (highlights ?? []) : [];
+          const isRealPoi = (h: RouteHighlight) => !!h.placeId;
+          const visibleHighlights = isNavigating
+            ? allHighlights
+            : allHighlights.filter((h) => h.type === "destination" || isRealPoi(h));
           return visibleHighlights.map((h, i) => {
             const isDestination = h.type === "destination";
             const isPoiSeen = isNavigating && seenPoiKeys.has(poiKey(h.lat, h.lng));
-            const useLabelStyle = !isNavigating && showPoiInPreview && !isDestination;
             const icon = isNavigating
               ? isPoiSeen
                 ? NAV_POI_SEEN_ICON
                 : NAV_POI_ICON
               : isDestination
                 ? END_POINT_ICON
-                : useLabelStyle
-                  ? L.divIcon({
-                      className: "",
-                      html: `<div style="background: white; border: 1px solid black; padding: 2px 6px; font-family: monospace; font-size: 11px; white-space: nowrap; border-radius: 2px;">${(h.name ?? h.label ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")}</div>`,
-                      iconAnchor: [0, 0],
-                    })
+                : showPoiInPreview
+                  ? PREVIEW_POI_DOT_ICON
                   : POI_DOT_ICON;
             return (
               <Marker
                 key={i}
                 position={[h.lat, h.lng]}
                 icon={icon}
-                zIndexOffset={useLabelStyle ? 45 : undefined}
+                zIndexOffset={45}
                 eventHandlers={{
                   click: (e) => {
                     L.DomEvent.stopPropagation(e);
@@ -832,32 +838,25 @@ export default function MapViewClient({
           });
         })()}
         {previewPois && previewPois.length > 0 && !isNavigating &&
-          previewPois.map((poi, i) => {
-            const safeName = poi.name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-            return (
-              <Marker
-                key={`preview-poi-${i}-${poi.lat}-${poi.lng}`}
-                position={[poi.lat, poi.lng]}
-                icon={L.divIcon({
-                  className: "",
-                  html: `<div style="background: white; border: 1px solid black; padding: 2px 6px; font-family: monospace; font-size: 11px; white-space: nowrap; border-radius: 2px;">${safeName}</div>`,
-                  iconAnchor: [0, 0],
-                })}
-                zIndexOffset={45}
-                eventHandlers={{
-                  click: (e) => {
-                    L.DomEvent.stopPropagation(e);
-                    setToastPoi({
-                      name: poi.name,
-                      description: poi.description ?? undefined,
-                      photo_url: poi.photo_url ?? undefined,
-                      type: poi.type,
-                    });
-                  },
-                }}
-              />
-            );
-          })}
+          previewPois.map((poi, i) => (
+            <Marker
+              key={`preview-poi-${i}-${poi.lat}-${poi.lng}`}
+              position={[poi.lat, poi.lng]}
+              icon={PREVIEW_POI_DOT_ICON}
+              zIndexOffset={45}
+              eventHandlers={{
+                click: (e) => {
+                  L.DomEvent.stopPropagation(e);
+                  setToastPoi({
+                    name: poi.name,
+                    description: poi.description ?? undefined,
+                    photo_url: poi.photo_url ?? undefined,
+                    type: poi.type,
+                  });
+                },
+              }}
+            />
+          ))}
         {customStartCoords && !isNavigating && !routeCoordinates?.length && (
           <Marker
             position={[customStartCoords[0], customStartCoords[1]]}

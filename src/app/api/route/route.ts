@@ -657,13 +657,27 @@ function scoreRoute(
     weights.cultural * avgCultural
   );
 
-  // Generate human-readable tags for the summary
+  // Data-driven tags from street quality scores (top 2-3 by score, lowercase)
+  const candidates: { score: number; tag: string }[] = [];
+  if (avgNoise > 0.5) candidates.push({ score: avgNoise, tag: "quiet streets" });
+  if (avgNoise > 0.6) candidates.push({ score: avgNoise, tag: "peaceful blocks" });
+  if (avgNoise > 0.5) candidates.push({ score: avgNoise, tag: "low traffic" });
+  if (avgGreen > 0.35) candidates.push({ score: avgGreen, tag: "leafy trees" });
+  if (avgGreen > 0.4) candidates.push({ score: avgGreen, tag: "tree-lined streets" });
+  if (avgGreen > 0.45) candidates.push({ score: avgGreen, tag: "green paths" });
+  if (avgClean > 0.85) candidates.push({ score: avgClean, tag: "well-kept streets" });
+  if (avgCultural > 0.3) candidates.push({ score: avgCultural, tag: "historic buildings" });
+  if (avgCultural > 0.35) candidates.push({ score: avgCultural, tag: "interesting facades" });
+  candidates.sort((a, b) => b.score - a.score);
+  const seen = new Set<string>();
   const tags: string[] = [];
-  if (avgNoise > 0.6) tags.push("quiet streets");
-  if (avgGreen > 0.4) tags.push("tree-lined");
-  if (avgCultural > 0.3) tags.push("culturally rich");
-  if (avgClean > 0.9) tags.push("clean route");
-  if (avgNoise < 0.3) tags.push("some busy streets");
+  for (const { tag } of candidates) {
+    if (tags.length >= 3) break;
+    if (!seen.has(tag)) {
+      seen.add(tag);
+      tags.push(tag);
+    }
+  }
 
   return {
     score,
@@ -1956,15 +1970,6 @@ async function enrichHighlightsWithPhotos(
   return results;
 }
 
-function stripSummaryQuotes(s: string | null | undefined): string {
-  if (s == null || typeof s !== "string") return "";
-  return s
-    .replace(/^["']|["']$/g, "")
-    .replace(/\\"/g, '"')
-    .replace(/\\'/g, "'")
-    .trim();
-}
-
 function softenSummaryForEmotionalSupport(summary: string | null | undefined): string {
   if (!summary) return "A quiet, peaceful walk";
   const softened = summary
@@ -1972,206 +1977,6 @@ function softenSummaryForEmotionalSupport(summary: string | null | undefined): s
     .replace(/\s{2,}/g, " ")
     .trim();
   return softened || "A quiet, peaceful walk";
-}
-
-/** Enforce max 6 words and strip trailing period/quotes from description. */
-function normalizeRouteLabel(s: string): string {
-  const t = stripSummaryQuotes(s).replace(/\.+$/, "").trim();
-  const words = t.split(/\s+/).filter(Boolean).slice(0, 6);
-  return words.join(" ");
-}
-
-async function generateDescription(
-  intent: string,
-  breakdown: { noise: number; green: number; clean: number; cultural: number },
-  duration: number,
-  distance: number,
-  destinationName?: string | null,
-  nightMode?: boolean,
-  discoveryRouteOptions?: {
-    neighborhood?: string | null;
-  },
-  loopRouteOptions?: { areaName?: string | null },
-  surpriseRouteOptions?: { startNeighborhood?: string; compassDirection?: string },
-  groundedRouteData?: {
-    routeNeighborhoods: string[];
-    compassDirection?: string;
-    isLoop: boolean;
-    destinationName?: string | null;
-  }
-): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
-
-  // Grounded in actual route data: neighborhoods from sampled route points only
-  if (groundedRouteData && groundedRouteData.routeNeighborhoods.length > 0) {
-    const { routeNeighborhoods, compassDirection, isLoop, destinationName: destName } = groundedRouteData;
-    const neighborhoodList = routeNeighborhoods.join(", ");
-    let userMessage = `This route passes through: ${neighborhoodList}.`;
-    if (compassDirection) userMessage += ` Heading: ${compassDirection}.`;
-    userMessage += ` ${isLoop ? "Loop route." : "One-way route."}`;
-    if (destName) userMessage += ` Destination: ${destName}.`;
-    userMessage += ` Generate a 3-6 word route label. ONLY reference the neighborhoods provided. Do NOT invent or guess locations. No flowery adjectives. Do NOT wrap your reply in quotes.`;
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        max_tokens: 25,
-        temperature: 0.3,
-        messages: [
-          {
-            role: "system",
-            content: `Given the neighborhoods a route actually passes through and its direction, generate a 3-6 word route label. ONLY reference the neighborhoods provided. Do NOT invent or guess locations. Use plain language, no flowery adjectives. Max 6 words. For loops use a short vibe label (e.g. "Loop through Sant Pere", "Quiet loop near Ciutadella", "Eixample backstreets loop") — not literal "A to B loop" or compass. Do NOT wrap the output in quotes or add a period.`,
-          },
-          { role: "user", content: userMessage },
-        ],
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`OpenAI error: ${res.status} ${err}`);
-    }
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
-    return raw ? normalizeRouteLabel(raw) : "";
-  }
-
-  const isDiscoveryWithDestination =
-    (intent === "discover" || intent === "scenic" || intent === "lively") && !!destinationName;
-
-  // Surprise me / random / get lost: short vibe sentence, no place names
-  if (surpriseRouteOptions) {
-    const { startNeighborhood = "Barcelona", compassDirection } = surpriseRouteOptions;
-    let userMessage = `Walking vibe: ${intent}. Start area: ${startNeighborhood}.`;
-    if (compassDirection) userMessage += ` General direction: ${compassDirection}.`;
-    userMessage += ` Write ONE short sentence (under 12 words). Lowercase. Describe the feel of the walk and general direction/area only. Do NOT list any place names or POIs. Examples: "a wander through the old town toward the waterfront", "heading east through quiet backstreets", "an aimless stroll through Eixample's grid". Do NOT wrap your reply in quotes.`;
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        max_tokens: 45,
-        temperature: 0.6,
-        messages: [
-          {
-            role: "system",
-            content: `You write one short sentence (under 12 words) for a random/surprise walk in Barcelona. Use lowercase. Describe the vibe and general direction or area only. Do NOT list place names or POIs. Examples: "a wander through the old town toward the waterfront", "heading east through quiet backstreets". Do NOT wrap the output in quotes.`,
-          },
-          { role: "user", content: userMessage },
-        ],
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`OpenAI error: ${res.status} ${err}`);
-    }
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
-    return raw ? stripSummaryQuotes(raw) : "";
-  }
-
-  // Discovery route to a destination: one short sentence, feel only — no POI names
-  if (isDiscoveryWithDestination) {
-    const neighborhood = discoveryRouteOptions?.neighborhood ?? "";
-    let userMessage = `Destination: ${destinationName}.`;
-    if (neighborhood) userMessage += ` Neighborhood: ${neighborhood}.`;
-    userMessage += ` Write ONE short sentence (under 12 words), lowercase. Describe the feel of the walk (e.g. narrow lanes, plaza, waterfront) and where it goes. Do NOT list place names or POIs. Example: "through the Gothic Quarter's narrow lanes to a hidden plaza café." Do NOT wrap your reply in quotes.`;
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        max_tokens: 45,
-        temperature: 0.6,
-        messages: [
-          {
-            role: "system",
-            content: `You write one short sentence (under 12 words) for a discovery walk in Barcelona that goes to a specific place. Use lowercase. Describe the feel of the walk (street character, vibe) and destination/area. Do NOT list place names or POIs. Example: "through the Gothic Quarter's narrow lanes to a hidden plaza café". Do NOT wrap the output in quotes.`,
-          },
-          { role: "user", content: userMessage },
-        ],
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`OpenAI error: ${res.status} ${err}`);
-    }
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
-    return raw ? stripSummaryQuotes(raw) : "";
-  }
-
-  // Default: tag-style description (tags only; no sentence, no place names)
-  let userMessage = `Intent: ${intent}. Breakdown: noise=${breakdown.noise}, green=${breakdown.green}, clean=${breakdown.clean}, cultural=${breakdown.cultural}. Duration seconds: ${duration}. Distance meters: ${distance}.`;
-  if (destinationName) userMessage += ` Destination: ${destinationName}.`;
-  if (nightMode) userMessage += " Night mode: true — generating tags for an after-dark walk; route may be rerouted via well-lit corridors (e.g. La Rambla). Prefer tags like 'avoids poorly-lit areas' or 'busy, well-lit corridors'.";
-
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      max_tokens: 60,
-      temperature: 0.7,
-      messages: [
-        {
-          role: "system",
-          content: `You generate short route tags for walking routes in Barcelona. Return 3-4 descriptive tags separated by ' · '. Each tag is 1-3 words max. Do NOT wrap the output in quotes — return only the tags (e.g. quiet streets · tree-lined · low traffic). Do NOT list place names or POIs — describe the walking experience only.
-
-Tags should describe the walking EXPERIENCE, not tourist attractions. Use simple, concrete language like: 'well-lit streets', 'tree-lined paths', 'quiet residential streets', 'busy main roads', 'pedestrian zones', 'park paths', 'low noise', 'leafy streets'. Do NOT use promotional language like 'cultural highlights', 'historic lanes', 'cultural lanes', or 'garden paths' — prefer plain route descriptions.
-
-Use the intent and score breakdown to pick relevant tags:
-- High noise_score (quiet): 'quiet streets', 'peaceful', 'low traffic'
-- High green_score (green): 'tree-lined', 'leafy streets', 'park paths'
-- High cultural_score (cultural): describe the street type, not attractions — e.g. 'narrow lanes', 'pedestrian streets'
-- High clean_score with others low: don't mention clean, pick something else
-- For discover intent: 'quiet streets', 'local streets', 'varied route'
-- For nature intent: 'shaded paths', 'park paths', 'green stretch'
-
-Examples:
-'quiet streets · tree-lined · low traffic'
-'well-lit streets · busy main roads · direct route'
-'leafy stretch · pedestrian zones · low noise'
-
-If nightMode is true, you are generating for an after-dark walk (route may avoid Raval and use La Rambla / well-lit corridors). Include at least one safety-aware tag:
-- 'well-lit streets', 'main roads', 'busy corridors', 'avoids poorly-lit areas', or 'busy, well-lit corridors'
-Do NOT mention danger or safety concerns — frame positively.
-
-Night examples:
-'well-lit streets · main roads · quick route'
-'busy corridors · tree-lined · low traffic'
-'avoids poorly-lit areas · busy, well-lit corridors · direct route'
-
-Respond with ONLY the tags, nothing else.`,
-        },
-        { role: "user", content: userMessage },
-      ],
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`OpenAI error: ${res.status} ${err}`);
-  }
-
-  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
-  const tags = raw ? raw.split(" · ").map((t) => t.trim()).filter(Boolean).slice(0, 3) : [];
-  const out = tags.join(" · ") || "";
-  return out ? stripSummaryQuotes(out) : "";
 }
 
 /** One batch LLM call to generate 6-10 word descriptions for places that only have a generic type. Optional searchQuery tailors descriptions to what the user is looking for (e.g. "laptop-friendly cafes" → focus on wifi/power outlets). */
@@ -3145,33 +2950,6 @@ export async function POST(req: NextRequest) {
             }
 
             let summary = buildSummary(waterfrontRoute.duration, waterfrontRoute.distance, tags, intent, isNight);
-            try {
-              const wfNeighborhoods = getRouteNeighborhoods(waterfrontRoute.coordinates);
-              const wfGrounded =
-                wfNeighborhoods.length > 0
-                  ? {
-                      routeNeighborhoods: wfNeighborhoods,
-                      compassDirection: getRouteCompassDirection(waterfrontRoute.coordinates),
-                      isLoop: false,
-                      destinationName: parsedArea,
-                    }
-                  : undefined;
-              const desc = await generateDescription(
-                intent,
-                breakdown,
-                waterfrontRoute.duration,
-                waterfrontRoute.distance,
-                parsedArea,
-                isNight,
-                undefined,
-                undefined,
-                undefined,
-                wfGrounded
-              );
-              if (desc) summary = stripSummaryQuotes(desc) || desc;
-            } catch {
-              /* keep template */
-            }
             if (isEmotionalSupport && summary) summary = softenSummaryForEmotionalSupport(summary);
 
             const result = {
@@ -3266,33 +3044,6 @@ export async function POST(req: NextRequest) {
               /* skip */
             }
             let summary = buildSummary(explorationRoute.duration, explorationRoute.distance, tags, intent, isNight);
-            try {
-              const exNeighborhoods = getRouteNeighborhoods(explorationRoute.coordinates);
-              const exGrounded =
-                exNeighborhoods.length > 0
-                  ? {
-                      routeNeighborhoods: exNeighborhoods,
-                      compassDirection: getRouteCompassDirection(explorationRoute.coordinates),
-                      isLoop: false,
-                      destinationName: parsedArea,
-                    }
-                  : undefined;
-              const desc = await generateDescription(
-                intent,
-                breakdown,
-                explorationRoute.duration,
-                explorationRoute.distance,
-                parsedArea,
-                isNight,
-                undefined,
-                undefined,
-                undefined,
-                exGrounded
-              );
-              if (desc) summary = stripSummaryQuotes(desc) || desc;
-            } catch {
-              /* keep template */
-            }
             if (isEmotionalSupport && summary) summary = softenSummaryForEmotionalSupport(summary);
             const trailDestinationName =
               ordered.length > 1 ? `${ordered[0].name} → ${ordered[ordered.length - 1].name}` : ordered[0].name;
@@ -3434,33 +3185,6 @@ export async function POST(req: NextRequest) {
             }
 
             let summary = buildSummary(explorationRoute.duration, explorationRoute.distance, tags, intent, isNight);
-            try {
-              const ex2Neighborhoods = getRouteNeighborhoods(explorationRoute.coordinates);
-              const ex2Grounded =
-                ex2Neighborhoods.length > 0
-                  ? {
-                      routeNeighborhoods: ex2Neighborhoods,
-                      compassDirection: getRouteCompassDirection(explorationRoute.coordinates),
-                      isLoop: false,
-                      destinationName: parsedArea,
-                    }
-                  : undefined;
-              const desc = await generateDescription(
-                intent,
-                breakdown,
-                explorationRoute.duration,
-                explorationRoute.distance,
-                parsedArea,
-                isNight,
-                undefined,
-                undefined,
-                undefined,
-                ex2Grounded
-              );
-              if (desc) summary = stripSummaryQuotes(desc) || desc;
-            } catch {
-              /* keep template */
-            }
             if (isEmotionalSupport && summary) summary = softenSummaryForEmotionalSupport(summary);
 
             const result = {
@@ -3575,38 +3299,6 @@ export async function POST(req: NextRequest) {
         }
 
         let summary = buildSummary(themedRoute.duration, themedRoute.distance, tags, intent, isNight);
-        try {
-          const themeDest = parsedThemeName || parsedPoiQuery;
-          const themeNeighborhoods = getRouteNeighborhoods(themedRoute.coordinates);
-          const themeGrounded =
-            themeNeighborhoods.length > 0
-              ? {
-                  routeNeighborhoods: themeNeighborhoods,
-                  compassDirection: getRouteCompassDirection(themedRoute.coordinates),
-                  isLoop: false,
-                  destinationName: themeDest,
-                }
-              : undefined;
-          const themeDiscoveryOptions =
-            !themeGrounded && (intent === "discover" || intent === "scenic" || intent === "lively") && themeDest
-              ? { neighborhood: parsedArea ?? undefined }
-              : undefined;
-          const desc = await generateDescription(
-            intent,
-            breakdown,
-            themedRoute.duration,
-            themedRoute.distance,
-            themeDest,
-            isNight,
-            themeDiscoveryOptions,
-            undefined,
-            undefined,
-            themeGrounded
-          );
-          if (desc) summary = stripSummaryQuotes(desc) || desc;
-        } catch {
-          /* keep template */
-        }
         if (isEmotionalSupport && summary) summary = softenSummaryForEmotionalSupport(summary);
 
         const result = {
@@ -3988,45 +3680,6 @@ export async function POST(req: NextRequest) {
       let summary = buildSummary(oneWayRoute.duration, oneWayRoute.distance, tags, intent, isNight);
       const nonDestHighlights = highlights.filter((h) => h.type !== "destination");
       const isDiscoveryOneWay = !isLoop && (intent === "discover" || intent === "scenic" || intent === "lively");
-      try {
-        const destLabel = destination_name ?? null;
-        const routeNeighborhoods = getRouteNeighborhoods(oneWayRoute.coordinates);
-        const compassDirection = getRouteCompassDirection(oneWayRoute.coordinates);
-        const groundedData =
-          routeNeighborhoods.length > 0
-            ? {
-                routeNeighborhoods,
-                compassDirection: compassDirection ?? undefined,
-                isLoop,
-                destinationName: destLabel,
-              }
-            : undefined;
-        const startNeighborhood = getNeighborhoodForCoords(loopOrigin[0], loopOrigin[1]);
-        const isSurpriseOrRandomDiscovery = isSurprise || (isDiscoveryOneWay && !destLabel);
-        const surpriseOptions = isSurpriseOrRandomDiscovery
-          ? { startNeighborhood, compassDirection: compassDirection ?? undefined }
-          : undefined;
-        const discoveryOptions =
-          !isLoop && destLabel && (intent === "discover" || intent === "scenic" || intent === "lively")
-            ? { neighborhood: startNeighborhood }
-            : undefined;
-        const loopOptions = isLoop ? { areaName: "Barcelona" as string } : undefined;
-        const desc = await generateDescription(
-          intent,
-          breakdown,
-          oneWayRoute.duration,
-          oneWayRoute.distance,
-          destLabel,
-          isNight,
-          discoveryOptions,
-          loopOptions,
-          surpriseOptions,
-          groundedData
-        );
-        if (desc) summary = stripSummaryQuotes(desc) || desc;
-      } catch {
-        // keep template
-      }
       if (isEmotionalSupport && summary) summary = softenSummaryForEmotionalSupport(summary);
       const poisForPreview =
         isDiscoveryOneWay && nonDestHighlights.length > 0
@@ -4231,66 +3884,6 @@ export async function POST(req: NextRequest) {
     // When isNight, always try LLM so night-aware tags can override buildSummary's "direct route" (e.g. destination_only).
     let recommendedSummary = recommended.summary;
     let quickSummary = quick.summary;
-    if (intent !== "quick" || isNight) {
-      try {
-        const recNeighborhoods = getRouteNeighborhoods(recommended.coordinates);
-        const recGrounded =
-          recNeighborhoods.length > 0
-            ? {
-                routeNeighborhoods: recNeighborhoods,
-                compassDirection: getRouteCompassDirection(recommended.coordinates),
-                isLoop: false,
-                destinationName: destination_name,
-              }
-            : undefined;
-        const recDiscoveryOptions =
-          (intent === "discover" || intent === "scenic" || intent === "lively") && destination_name
-            ? {}
-            : undefined;
-        const recDesc = await generateDescription(
-          intent,
-          recommended.breakdown,
-          recDuration,
-          recDistance,
-          destination_name,
-          isNight,
-          recDiscoveryOptions,
-          undefined,
-          undefined,
-          recGrounded
-        );
-        if (recDesc) recommendedSummary = stripSummaryQuotes(recDesc) || recDesc;
-      } catch {
-        /* keep template */
-      }
-    }
-    try {
-      const qNeighborhoods = getRouteNeighborhoods(quick.coordinates);
-      const qGrounded =
-        qNeighborhoods.length > 0
-          ? {
-              routeNeighborhoods: qNeighborhoods,
-              compassDirection: getRouteCompassDirection(quick.coordinates),
-              isLoop: false,
-              destinationName: destination_name,
-            }
-          : undefined;
-      const qDesc = await generateDescription(
-        "quick",
-        quick.breakdown,
-        qDuration,
-        qDistance,
-        destination_name,
-        isNight,
-        undefined,
-        undefined,
-        undefined,
-        qGrounded
-      );
-      if (qDesc) quickSummary = stripSummaryQuotes(qDesc) || qDesc;
-    } catch (err) {
-      console.warn("[route] generateDescription failed for quick summary:", err);
-    }
     if (isEmotionalSupport) {
       if (recommendedSummary) recommendedSummary = softenSummaryForEmotionalSupport(recommendedSummary);
       if (quickSummary) quickSummary = softenSummaryForEmotionalSupport(quickSummary);
