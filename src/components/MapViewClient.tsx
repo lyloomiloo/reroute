@@ -78,10 +78,12 @@ function FitRouteBounds({
       ([lng, lat]) => [lat, lng] as [number, number]
     );
     const bounds = L.latLngBounds(positions);
-    map.fitBounds(bounds, {
-      paddingTopLeft: [40, 40],
-      paddingBottomRight: [40, 180],
-    });
+    if (!isNavigating) {
+      map.fitBounds(bounds, {
+        paddingTopLeft: [40, 40],
+        paddingBottomRight: [40, 180],
+      });
+    }
   }, [map, routeCoordinates, isNavigating]);
   return null;
 }
@@ -101,11 +103,13 @@ function FitPlaceOptionsBounds({
     const points: L.LatLngExpression[] = placeOptions.map((p) => [p.lat, p.lng] as [number, number]);
     if (origin?.length === 2) points.push([origin[0], origin[1]]);
     const bounds = L.latLngBounds(points);
-    map.fitBounds(bounds, {
-      paddingTopLeft: [40, 40],
-      paddingBottomRight: [40, 180],
-      maxZoom: 15,
-    });
+    if (!isNavigating) {
+      map.fitBounds(bounds, {
+        paddingTopLeft: [40, 40],
+        paddingBottomRight: [40, 180],
+        maxZoom: 15,
+      });
+    }
   }, [map, placeOptions, origin, isNavigating]);
   return null;
 }
@@ -159,7 +163,7 @@ function NavigationMapController({
     if (!isNavigating) {
       if (prevNavigatingRef.current) {
         prevNavigatingRef.current = false;
-        if (routeCoordinates?.length) {
+        if (!isNavigating && routeCoordinates?.length) {
           const positions: L.LatLngExpression[] = routeCoordinates.map(
             ([lng, lat]) => [lat, lng] as [number, number]
           );
@@ -167,7 +171,7 @@ function NavigationMapController({
             paddingTopLeft: [40, 40],
             paddingBottomRight: [40, 180],
           });
-        } else {
+        } else if (!isNavigating) {
           const [lat, lng] = Array.isArray(center) ? center : [center.lat, center.lng];
           map.setView([lat, lng], zoom, { animate: true });
         }
@@ -180,8 +184,13 @@ function NavigationMapController({
       : initialNavCenter;
     if (!latLng) return;
     const [lat, lng] = latLng;
-    console.log("[nav] Flying to zoom 18:", lat, lng);
-    map.flyTo([lat, lng], 18, { animate: true, duration: 1 });
+    const t = setTimeout(() => {
+      map.flyTo([lat, lng], 18, {
+        duration: 1.0,
+        easeLinearity: 0.25,
+      });
+    }, 100);
+    return () => clearTimeout(t);
   }, [isNavigating, map, userPosition, initialNavCenter]);
   useEffect(() => {
     if (!isNavigating || !userPosition || !autoFollow) return;
