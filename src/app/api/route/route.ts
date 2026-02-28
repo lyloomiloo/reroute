@@ -1141,6 +1141,7 @@ Destination vs walk feeling: If the user describes an ACTIVITY or PLACE TYPE the
 - "something active outdoors", "active outdoors", "outdoor exercise", "hike", "trail" (without a named area above) → mood_and_poi with intent exercise and poi_query "Montjuïc park hiking trail viewpoint Barcelona". This finds actual outdoor activity spots, not tour companies. Do NOT classify as mood_only.
 - "go for a run", "running route", "jog", "get my steps in" → mood_only with intent exercise (these are duration-based loop routes, not destination-based).
 
+- SPECIFIC BUSINESS / PLACE NAMES: If the user's input looks like a specific business name, brand, or place name that you don't recognize as a general mood or intent, classify it as pattern "destination_only" with the full input as the destination. Do NOT try to interpret unfamiliar names as moods or intents. Examples: "vivagym bruc" → destination_only, destination "vivagym bruc". "day day go" → destination_only, destination "day day go". "café centric" → destination_only, destination "café centric". When in doubt between a mood and a specific place name, prefer destination_only.
 - GENERIC vs SPECIFIC place requests: If the user asks for A SPECIFIC named place ("Hospital Clínic", "ELISAVA", "Sagrada Familia") → mood_and_destination with that name. If the user asks for a GENERIC type of place ("a hospital", "a pharmacy", "a cafe", "somewhere to eat") → mood_and_poi with a poi_query to search nearby. "walk to Hospital Clínic" = mood_and_destination, destination "Hospital Clínic". "walk to a hospital" = mood_and_poi, poi_query "hospital Barcelona". "find me a pharmacy" = mood_and_poi, poi_query "pharmacy Barcelona". The article "a/an" or phrasing like "find me", "nearest", "closest" signals a GENERIC search, not a specific destination.
 - NEAR [PLACE] pattern: When the user says "near X", "close to X", "around X", or "by X" where X is a specific named place (not an area/neighborhood), this means SEARCH NEAR that place, not FROM that place. Set pattern to mood_and_poi, and set the "area" field to the named place so the search is centered there. Examples: "bar for groups near ELISAVA" → mood_and_poi, poi_query "bar for groups Barcelona", area "ELISAVA". "coffee near Sagrada Familia" → mood_and_poi, poi_query "coffee shop Barcelona", area "Sagrada Familia". "restaurant near the beach" → mood_and_poi, poi_query "restaurant Barcelona", area "Barceloneta". This is DIFFERENT from "in [neighborhood]" which means explore within an area. "near ELISAVA" = search centered on ELISAVA. "in Gràcia" = explore Gràcia.
 - ON THE WAY / STOP pattern: When the user says "pick up X on the way to Y", "stop at X on the way to Y", "grab X before going to Y", or similar multi-stop requests, classify as themed_walk with destination: Y (final destination), poi_query: search query for X (the stop), theme_name: short label like "matcha stop → beach". Examples: "pick up matcha on the way to the beach" → themed_walk, destination "Barceloneta", poi_query "matcha cafe Barcelona", theme_name "matcha stop → beach". "grab coffee then go to ELISAVA" → themed_walk, destination "ELISAVA", poi_query "coffee shop Barcelona", theme_name "coffee → ELISAVA".
@@ -1357,6 +1358,8 @@ export interface PlaceOptionResult {
   /** Google Places primaryType (e.g. restaurant, cafe) — used to default to fastest route for establishments. */
   primary_type?: string | null;
   review_snippet?: string | null;
+  /** Formatted address from Google Places (for destination display). */
+  address?: string | null;
 }
 
 // Re-rank places: prefer hidden gems (high rating, fewer reviews) over mainstream
@@ -1651,6 +1654,7 @@ async function searchPlace(
       photo_url,
       primary_type: primaryType ?? null,
       review_snippet: reviewText || reviewKeywords || null,
+      address: place.formattedAddress?.trim() ?? null,
     });
   }
   if (needLlmDescription.length > 0) {
@@ -2354,6 +2358,7 @@ export async function POST(req: NextRequest) {
     let destCoords: [number, number] | null = null;
     let destination_name: string | null = null;
     let destination_address: string | null = null;
+    let destination_photo: string | null = null;
     let pattern: RequestPattern = "mood_only";
     let suggestedDuration: number | null = null;
     let maxDurationMinutes: number | null = null;
@@ -2453,10 +2458,26 @@ export async function POST(req: NextRequest) {
                 destCoords = fallback;
                 destination_name = name;
               } else {
-                const geo = await geocodePlace(name);
-                if (geo) {
-                  destCoords = [geo.lat, geo.lng];
-                  destination_name = name;
+                let places = await searchPlace(name, originCoords[0], originCoords[1], 5, 5000);
+                if (places.length === 0) {
+                  places = await searchPlace(`${name} barcelona`, originCoords[0], originCoords[1], 5, 8000);
+                }
+                if (places.length > 0) {
+                  destCoords = [places[0].lat, places[0].lng];
+                  destination_name = places[0].name;
+                  destination_address = places[0].address ?? places[0].description ?? null;
+                  destination_photo = places[0].photo_url ?? null;
+                } else {
+                  const geo = await geocodePlace(name);
+                  if (geo) {
+                    destCoords = [geo.lat, geo.lng];
+                    destination_name = name;
+                  } else {
+                    return NextResponse.json(
+                      { error: "Couldn't find that place. Try the full name or address." },
+                      { status: 400 }
+                    );
+                  }
                 }
               }
             }
@@ -3815,6 +3836,7 @@ export async function POST(req: NextRequest) {
       alternatives_count: scored.length,
       destination_name,
       destination_address,
+      destination_photo: destination_photo ?? undefined,
       pattern,
       intent,
       night_mode: isNight,

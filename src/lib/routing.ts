@@ -54,6 +54,7 @@ export interface RoutesResponse {
   quick: RouteResult | null;
   destination_name: string | null;
   destination_address: string | null;
+  destination_photo?: string | null;
   pattern: string;
   /** Route intent for map polyline color (calm, nature, scenic, discover, lively, exercise, cafe, quick, themed_walk). */
   intent?: string;
@@ -187,6 +188,7 @@ export async function getRoute(
     quick: data.quick,
     destination_name: data.destination_name ?? null,
     destination_address: data.destination_address ?? null,
+    destination_photo: data.destination_photo ?? null,
     pattern: data.pattern ?? "mood_only",
     intent: data.intent ?? undefined,
     isLoop: data.is_loop === true || data.isLoop === true,
@@ -231,6 +233,7 @@ export async function getRouteWithDuration(
     quick: data.quick,
     destination_name: data.destination_name ?? null,
     destination_address: data.destination_address ?? null,
+    destination_photo: data.destination_photo ?? null,
     pattern: data.pattern ?? "mood_only",
     intent: data.intent ?? undefined,
     isLoop: data.is_loop === true || data.isLoop === true,
@@ -278,6 +281,7 @@ export async function getRouteWithDestination(
     quick: data.quick,
     destination_name: data.destination_name ?? null,
     destination_address: data.destination_address ?? null,
+    destination_photo: data.destination_photo ?? null,
     pattern: data.pattern ?? "mood_only",
     intent: data.intent ?? undefined,
     isLoop: data.is_loop === true || data.isLoop === true,

@@ -116,6 +116,7 @@ function PageContent() {
   const [edgeCaseSuggestion, setEdgeCaseSuggestion] = useState<string | null>(null);
   const [edgeCaseTheme, setEdgeCaseTheme] = useState<string | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
+  const [showDestinationDetail, setShowDestinationDetail] = useState(false);
   /** Last mood text used to fetch current route; used by "Try another" for mood_and_area and mood_only. */
   const [lastRouteMoodText, setLastRouteMoodText] = useState<string>("");
   /** Last duration (minutes) used for mood_only route; used by "Try another" to re-request with same duration. */
@@ -246,6 +247,7 @@ function PageContent() {
           const routeResult = await getRouteWithDuration(origin, text, duration, { signal: controller.signal, forceNightMode: nightModeOverride });
           clearTimeout(timeout);
           setRoutes(routeResult as RoutesResponse);
+          setDestinationPhoto((routeResult as RoutesResponse).destination_photo ?? null);
           setLastRouteMoodText(text);
           setLastRouteDurationMinutes(duration);
           setShowQuick(false);
@@ -281,6 +283,7 @@ function PageContent() {
           )
         );
         setRoutes(result as RoutesResponse);
+        setDestinationPhoto((result as RoutesResponse).destination_photo ?? null);
         setLastRouteMoodText(text);
         setLastRouteDurationMinutes(null);
         setShowQuick(false);
@@ -343,11 +346,13 @@ function PageContent() {
         });
         clearTimeout(timeout);
         setRoutes(routeResult);
+        setDestinationPhoto(routeResult.destination_photo ?? null);
       } else {
         const result = await getRoute(origin, lastRouteMoodText, { signal: controller.signal, forceNightMode: nightModeOverride });
         clearTimeout(timeout);
         if (isEdgeCaseResponse(result) || isDurationPrompt(result) || isPlaceOptionsResponse(result)) return;
         setRoutes(result as RoutesResponse);
+        setDestinationPhoto((result as RoutesResponse).destination_photo ?? null);
       }
     } catch (err) {
       clearTimeout(timeout);
@@ -378,6 +383,7 @@ function PageContent() {
         )
       );
       setRoutes(result as RoutesResponse);
+      setDestinationPhoto((result as RoutesResponse).destination_photo ?? null);
       setLastRouteMoodText(moodInput);
       setLastRouteDurationMinutes(minutes);
       setShowQuick(false);
@@ -530,7 +536,13 @@ function PageContent() {
           }))
         )
       );
-      setRoutes({ ...result, destination_name: place.name, destination_address: place.description ?? null });
+      setDestinationPhoto(place.photo_url ?? null);
+      setRoutes({
+        ...result,
+        destination_name: place.name,
+        destination_address: place.description ?? null,
+        destination_photo: place.photo_url ?? null,
+      });
       setShowQuick(false);
     } catch (err) {
       console.error("Route error:", err);
@@ -548,6 +560,7 @@ function PageContent() {
   const destinationHighlight = activeHighlights?.find((h) => h.type === "destination");
   const destinationName = routes?.destination_name ?? destinationHighlight?.name ?? destinationHighlight?.label;
   const destinationPhotoResolved = destinationPhoto ?? destinationHighlight?.photo_url ?? destinationHighlight?.photo_urls?.[0];
+  const destinationAddress = routes?.destination_address ?? null;
 
   const appContent = (
       <PhoneFrame>
@@ -758,11 +771,22 @@ function PageContent() {
                       <>
                         <p className="font-mono font-bold text-lg leading-tight uppercase pr-8">{active.summary}</p>
                         {routes.destination_name && (
-                          <p className="font-mono text-sm text-gray-500 mt-2">
-                            {routes.pattern === "mood_and_area"
-                              ? `WALK IN ${routes.destination_name}`
-                              : `→ ${routes.destination_name}`}
-                          </p>
+                          routes.pattern === "mood_and_area" ? (
+                            <p className="font-mono text-sm text-gray-500 mt-2">
+                              WALK IN {routes.destination_name}
+                            </p>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setShowDestinationDetail(true)}
+                              className="flex items-center gap-1 group mt-2 text-left"
+                            >
+                              <span className="font-mono text-sm text-gray-500 reroute-uppercase">→</span>
+                              <span className="font-mono text-sm text-gray-700 reroute-uppercase underline decoration-dashed decoration-gray-400 underline-offset-4 group-active:text-black">
+                                {routes.destination_name}
+                              </span>
+                            </button>
+                          )
                         )}
                         <p className="font-mono text-xs text-gray-400">
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
@@ -771,42 +795,42 @@ function PageContent() {
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
                         <div className="mt-4">
-                            {(() => {
-                              const alt = routes.quick;
-                              const main = routes.recommended;
-                              const showAlternative =
-                                alt &&
-                                main &&
-                                routes.pattern !== "mood_and_area" &&
-                                Math.abs(alt.duration - main.duration) > 120 &&
-                                Math.abs(alt.distance - main.distance) > 200;
-                              return showAlternative ? (
-                                <div className="mb-2">
-                                  {showQuick ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => setShowQuick(false)}
-                                      className="text-base text-gray-600 underline reroute-uppercase"
-                                    >
-                                      {routes.default_is_fastest ? "Use fastest route" : getUseRouteLabel(routes.intent)}
-                                    </button>
-                                  ) : (
-                                    <p className="text-base text-gray-500 reroute-uppercase">
-                                      {routes.default_is_fastest
-                                        ? `${getIntentRouteLabel(routes.intent)}: ${formatDuration(routes.quick.duration)} — `
-                                        : `Fastest route: ${formatDuration(routes.quick.duration)} — `}
+                            {routes.quick &&
+                              (() => {
+                                const alt = routes.quick;
+                                const main = routes.recommended;
+                                const showAlternative =
+                                  main &&
+                                  routes.pattern !== "mood_and_area" &&
+                                  Math.abs(alt.duration - main.duration) > 120 &&
+                                  Math.abs(alt.distance - main.distance) > 200;
+                                return showAlternative ? (
+                                  <div className="mb-2">
+                                    {showQuick ? (
                                       <button
                                         type="button"
-                                        onClick={() => setShowQuick(true)}
-                                        className="text-foreground underline"
+                                        onClick={() => setShowQuick(false)}
+                                        className="text-base text-gray-600 underline reroute-uppercase"
                                       >
-                                        Switch
+                                        {routes.default_is_fastest ? "Use fastest route" : getUseRouteLabel(routes.intent)}
                                       </button>
-                                    </p>
-                                  )}
-                                </div>
-                              ) : null;
-                            })()}
+                                    ) : (
+                                      <p className="text-base text-gray-500 reroute-uppercase">
+                                        {routes.default_is_fastest
+                                          ? `${getIntentRouteLabel(routes.intent)}: ${formatDuration(alt.duration)} — `
+                                          : `Fastest route: ${formatDuration(alt.duration)} — `}
+                                        <button
+                                          type="button"
+                                          onClick={() => setShowQuick(true)}
+                                          className="text-foreground underline"
+                                        >
+                                          Switch
+                                        </button>
+                                      </p>
+                                    )}
+                                  </div>
+                                ) : null;
+                              })()}
                             <div className="flex gap-2">
                               {(routes.pattern === "mood_and_area" || routes.pattern === "mood_only") && lastRouteMoodText.trim() && (
                             <button
@@ -856,6 +880,43 @@ function PageContent() {
                       </>
                     );
                   })()}
+                </div>
+              </div>
+            )}
+            {showDestinationDetail && (
+              <div
+                className="fixed inset-0 z-[200] flex items-end justify-center bg-black/30"
+                onClick={() => setShowDestinationDetail(false)}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Destination details"
+              >
+                <div
+                  className="w-full max-w-md bg-white rounded-t-2xl p-5"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {destinationPhotoResolved && (
+                    <img
+                      src={destinationPhotoResolved}
+                      alt=""
+                      className="w-full h-32 object-cover rounded-lg mb-3"
+                    />
+                  )}
+                  <p className="font-mono font-bold text-lg">{destinationName ?? "Destination"}</p>
+                  {destinationAddress && (
+                    <p className="font-mono text-sm text-gray-500 mt-1">{destinationAddress}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDestinationDetail(false);
+                      handleClearRoute();
+                      moodInputRef.current?.focus();
+                    }}
+                    className="w-full mt-4 py-3 border border-black rounded-lg font-mono text-sm reroute-uppercase text-center"
+                  >
+                    Change destination
+                  </button>
                 </div>
               </div>
             )}
