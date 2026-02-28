@@ -761,16 +761,14 @@ export default function MapViewClient({
           />
         ))}
         {customStartCoords && !isNavigating && !routeCoordinates?.length && (
-          <CircleMarker
-            center={[customStartCoords[0], customStartCoords[1]]}
-            radius={10}
-            pathOptions={{
-              color: "#000",
-              weight: 2,
-              fillColor: "#000",
-              fillOpacity: 0.15,
-              className: "custom-start-marker-pulse",
-            }}
+          <Marker
+            position={[customStartCoords[0], customStartCoords[1]]}
+            icon={L.divIcon({
+              className: "",
+              html: '<div class="start-pulse"></div>',
+              iconSize: [16, 16],
+              iconAnchor: [8, 8],
+            })}
           />
         )}
         {showUserLocation && userPosition && (
