@@ -1217,6 +1217,12 @@ Pattern decision rules:
 IMPORTANT CLASSIFICATION RULES:
 - If the user describes a VIBE or ACTIVITY without naming a specific place or type of business, classify as mood_only. Examples: 'calm walk', 'I want nature', 'show me something new', 'energetic walk' → mood_only. Exception: "something active outdoors", "hike", "trail", "workout walk" → mood_and_poi (see outdoor-activity rule).
 - Only classify as mood_and_poi if the user names a SPECIFIC type of place to go TO: 'coffee shop', 'asian food', 'bookstore', 'museum' → mood_and_poi
+- IMPORTANT: When the user asks for a TYPE of place with specific requirements (e.g. 'laptop-friendly cafes', 'cafes with wifi', 'bars with outdoor seating', 'restaurants with a view'), this is ALWAYS mood_and_poi — NOT mood_only. The user wants to FIND a specific place, not go for a mood walk. Set pattern to mood_and_poi and generate a poi_query.
+- 'laptop-friendly cafes' → mood_and_poi, poi_query 'laptop friendly cafe wifi Barcelona', intent calm
+- 'cafes with wifi' → mood_and_poi, poi_query 'cafe wifi laptop Barcelona', intent calm
+- 'quiet bar for groups' → mood_and_poi, poi_query 'bar for groups Barcelona', intent calm
+- 'restaurant with a terrace' → mood_and_poi, poi_query 'restaurant terrace outdoor seating Barcelona', intent calm
+The keyword here is that the user is describing a PLACE they want to go to, not a WALK they want to take.
 - 'restaurant' IS a place type. "Something active outdoors", "hike", "trail", "workout walk" get mood_and_poi with outdoor poi_query so the user gets a destination first (not duration picker).
 - 'show me something I've never seen' is mood_only, not mood_and_poi.
 - RANDOM / SURPRISE: "surprise me", "get lost", "I want to get lost", "get lost for a bit", "lose myself", "wander", "no plan", "just walk" → pattern mood_only, intent discover, is_surprise: true, skip_duration: true. You MUST set both is_surprise and skip_duration so the app treats these as random-direction routes (no duration picker, server picks ~25 min). Never use a different pattern for these phrases.
