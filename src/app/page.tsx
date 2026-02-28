@@ -664,22 +664,23 @@ function PageContent() {
                 </div>
               </div>
             )}
+            </div>
             {routes && !isNavigating && (
-              <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)] z-[100] relative overflow-visible">
+              <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-4 pt-4 pb-6 z-[100] relative">
                 <button
                   type="button"
                   onClick={handleClearRoute}
-                  className="absolute -top-3 -right-3 w-8 h-8 bg-white border border-gray-300 rounded-full flex items-center justify-center text-gray-500 hover:text-black text-sm shadow-sm z-50 font-mono leading-none"
+                  className="absolute top-4 right-4 text-gray-400 text-lg p-1 z-10 hover:text-black"
                   aria-label="Clear route"
                 >
                   ×
                 </button>
-                <div className="max-w-md mx-auto px-6 pt-4 pb-6">
+                <div className="max-w-md mx-auto">
                   {(() => {
                     const active = routes.quick && showQuick ? routes.quick : routes.recommended;
                     return (
                       <>
-                        <p className="font-mono font-bold text-lg leading-tight uppercase">{active.summary}</p>
+                        <p className="font-mono font-bold text-lg leading-tight uppercase pr-8">{active.summary}</p>
                         {routes.destination_name && (
                           <p className="font-mono text-sm text-gray-500 mt-2">
                             {routes.pattern === "mood_and_area"
@@ -752,7 +753,6 @@ function PageContent() {
                 </div>
               </div>
             )}
-            </div>
           </div>
 
           {/* BOTTOM: Input section — hidden during navigation */}
