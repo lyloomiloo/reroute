@@ -2025,7 +2025,7 @@ async function generateDescription(
         messages: [
           {
             role: "system",
-            content: `Given the neighborhoods a route actually passes through and its direction, generate a 3-6 word route label. ONLY reference the neighborhoods provided. Do NOT invent or guess locations. Use plain language, no flowery adjectives. Max 6 words. Do NOT wrap the output in quotes or add a period.`,
+            content: `Given the neighborhoods a route actually passes through and its direction, generate a 3-6 word route label. ONLY reference the neighborhoods provided. Do NOT invent or guess locations. Use plain language, no flowery adjectives. Max 6 words. For loops use a short vibe label (e.g. "Loop through Sant Pere", "Quiet loop near Ciutadella", "Eixample backstreets loop") — not literal "A to B loop" or compass. Do NOT wrap the output in quotes or add a period.`,
           },
           { role: "user", content: userMessage },
         ],
@@ -2040,9 +2040,6 @@ async function generateDescription(
     return raw ? normalizeRouteLabel(raw) : "";
   }
 
-  const isLoopWithArea =
-    loopRouteOptions?.areaName &&
-    (intent === "calm" || intent === "nature" || intent === "exercise");
   const isDiscoveryWithDestination =
     (intent === "discover" || intent === "scenic" || intent === "lively") && !!destinationName;
 
@@ -2066,38 +2063,6 @@ async function generateDescription(
           {
             role: "system",
             content: `You write one short sentence (under 12 words) for a random/surprise walk in Barcelona. Use lowercase. Describe the vibe and general direction or area only. Do NOT list place names or POIs. Examples: "a wander through the old town toward the waterfront", "heading east through quiet backstreets". Do NOT wrap the output in quotes.`,
-          },
-          { role: "user", content: userMessage },
-        ],
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`OpenAI error: ${res.status} ${err}`);
-    }
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
-    return raw ? stripSummaryQuotes(raw) : "";
-  }
-
-  // Loop route: one short sentence referencing area and what makes it good for that mood
-  if (isLoopWithArea) {
-    const areaName = loopRouteOptions!.areaName!;
-    const userMessage = `Intent: ${intent}. Area: ${areaName}. Write ONE short sentence (under 12 words), lowercase. Reference the area and what makes it good for this mood. Do NOT list place names. Example: "a quiet loop through Eixample's tree-lined blocks." Do NOT wrap your reply in quotes.`;
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        max_tokens: 45,
-        temperature: 0.6,
-        messages: [
-          {
-            role: "system",
-            content: `You write one short sentence (under 12 words) for a walking loop in Barcelona. Lowercase. Reference the area and why it fits the mood (calm, nature, or exercise). Do NOT list place names. Examples: "a quiet loop through Eixample's tree-lined blocks", "a green loop around Montjuïc's park paths". Do NOT wrap the output in quotes.`,
           },
           { role: "user", content: userMessage },
         ],

@@ -6,7 +6,6 @@ import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, CircleMarker
 import L from "leaflet";
 import type { LatLngExpression } from "leaflet";
 import type { RouteHighlight, PlaceOption, RoutePreviewPoi } from "@/lib/routing";
-import { getInitialBearing } from "@/lib/routing";
 import {
   GEOLOCATION_OPTIONS,
   handleGeolocationError,
@@ -786,27 +785,6 @@ export default function MapViewClient({
                 )}
               </Marker>
             )}
-            {isLoopRoute && routeCoordinates.length >= 2 && !isNavigating && (() => {
-              const idx = Math.floor(routeCoordinates.length * 0.15);
-              const segment = routeCoordinates.slice(
-                Math.max(0, idx - 2),
-                Math.min(routeCoordinates.length, idx + 3)
-              );
-              const bearing = segment.length >= 2 ? getInitialBearing(segment) : 0;
-              const routeColor = (ROUTE_INTENT_COLORS[routeIntent ?? ""] ?? DEFAULT_ROUTE_COLOR).color;
-              return (
-                <Marker
-                  position={[routeCoordinates[idx][1], routeCoordinates[idx][0]]}
-                  icon={L.divIcon({
-                    className: "",
-                    html: `<div style="transform: rotate(${bearing}deg); color: ${routeColor}; font-size: 10px; line-height: 1; pointer-events: none;">▶</div>`,
-                    iconSize: [10, 10],
-                    iconAnchor: [5, 5],
-                  })}
-                  zIndexOffset={55}
-                />
-              );
-            })()}
           </>
         )}
         {(() => {

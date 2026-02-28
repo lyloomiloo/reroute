@@ -599,7 +599,10 @@ function PageContent() {
           {toastMessage}
         </div>
       )}
-      <div className={`h-[100dvh] flex flex-col bg-[#f0f0f0] ${!isNavigating ? "pb-[220px]" : ""}`}>
+      <div
+        className={`h-[100dvh] flex flex-col ${!isNavigating ? "pb-[180px]" : ""}`}
+        style={!isNavigating ? { background: "linear-gradient(to top, #ffffff 180px, #f0f0f0 180px)" } : undefined}
+      >
         <>
           {/* Edge-case centered modal */}
           {edgeCaseMessage && (
