@@ -761,6 +761,31 @@ function waypointFromBearing(
   return [waypointLat, waypointLng];
 }
 
+/** Point ~offsetM meters perpendicular to the line from (fromLat,fromLng) to (toLat,toLng). Used so the return leg takes different streets. */
+function offsetPerpendicular(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number,
+  offsetM: number = 200
+): [number, number] {
+  const midLat = (fromLat + toLat) / 2;
+  const midLng = (fromLng + toLng) / 2;
+  const dirLng = toLng - fromLng;
+  const dirLat = toLat - fromLat;
+  const perpLat = -dirLng;
+  const perpLng = dirLat;
+  const norm = Math.sqrt(perpLat * perpLat + perpLng * perpLng) || 1;
+  const pLat = perpLat / norm;
+  const pLng = perpLng / norm;
+  const latDegPerM = 1 / 111320;
+  const midLatRad = (midLat * Math.PI) / 180;
+  const lngDegPerM = 1 / (111320 * Math.cos(midLatRad));
+  const offsetLat = midLat + (offsetM * pLat) * latDegPerM;
+  const offsetLng = midLng + (offsetM * pLng) * lngDegPerM;
+  return [offsetLat, offsetLng];
+}
+
 function pickWaypointFromBoundary(
   intent: Intent,
   boundary: [number, number][],
@@ -3122,13 +3147,14 @@ export async function POST(req: NextRequest) {
           const wp = waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, bearing);
           try {
             const outRoutes = await fetchOrsRoutes(loopOrigin, wp, intent, forceAvoidZones);
-            const backRoutes = await fetchOrsRoutes(wp, loopOrigin, intent, forceAvoidZones);
-            if (!outRoutes[0] || !backRoutes[0]) continue;
-            const loopCoords = [...outRoutes[0].coordinates, ...backRoutes[0].coordinates.slice(1)] as [number, number][];
+            if (!outRoutes[0]) continue;
+            const returnOffset = offsetPerpendicular(wp[0], wp[1], loopOrigin[0], loopOrigin[1], 200);
+            const returnRoute = await fetchOrsWaypointRoute(wp, [returnOffset, loopOrigin], intent, forceAvoidZones);
+            const loopCoords = [...outRoutes[0].coordinates, ...returnRoute.coordinates.slice(1)] as [number, number][];
             const combined: RouteSegment = {
               coordinates: loopCoords,
-              duration: outRoutes[0].duration + backRoutes[0].duration,
-              distance: outRoutes[0].distance + backRoutes[0].distance,
+              duration: outRoutes[0].duration + returnRoute.duration,
+              distance: outRoutes[0].distance + returnRoute.distance,
             };
             const { score } = scoreRoute(combined.coordinates, intent, index);
             if (!best || score > best.score) best = { route: combined, wp, score };
@@ -3168,17 +3194,15 @@ export async function POST(req: NextRequest) {
         oneWayRoute = orsRoutes[0] ?? null;
         if (!oneWayRoute) throw new Error("No one-way route from ORS");
         if (isLoop) {
-          const returnRoutes = await fetchOrsRoutes(waypoint, loopOrigin, intent, forceAvoidZones);
-          if (returnRoutes[0]) {
-            const outCoords = oneWayRoute.coordinates;
-            const backCoords = returnRoutes[0].coordinates;
-            const loopCoords = [...outCoords, ...backCoords.slice(1)];
-            oneWayRoute = {
-              coordinates: loopCoords,
-              duration: oneWayRoute.duration + returnRoutes[0].duration,
-              distance: oneWayRoute.distance + returnRoutes[0].distance,
-            };
-          }
+          const returnOffset = offsetPerpendicular(waypoint[0], waypoint[1], loopOrigin[0], loopOrigin[1], 200);
+          const returnRoute = await fetchOrsWaypointRoute(waypoint, [returnOffset, loopOrigin], intent, forceAvoidZones);
+          const outCoords = oneWayRoute.coordinates;
+          const loopCoords = [...outCoords, ...returnRoute.coordinates.slice(1)];
+          oneWayRoute = {
+            coordinates: loopCoords,
+            duration: oneWayRoute.duration + returnRoute.duration,
+            distance: oneWayRoute.distance + returnRoute.distance,
+          };
         }
       }
       const { score, breakdown, tags } = scoreRoute(oneWayRoute.coordinates, intent, index);
