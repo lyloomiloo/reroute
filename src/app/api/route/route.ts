@@ -137,6 +137,31 @@ function findNearestSafeCorridor(lat: number, lng: number): [number, number] {
   return [best.lat, best.lng];
 }
 
+/** Bounds for "route likely crosses Raval" check (slightly larger). */
+const RAVAL_CROSS_BOUNDS = {
+  north: 41.3835,
+  south: 41.3720,
+  west: 2.1650,
+  east: 2.1745,
+};
+
+function isInRavalForCrossCheck(lat: number, lng: number): boolean {
+  return (
+    lat >= RAVAL_CROSS_BOUNDS.south &&
+    lat <= RAVAL_CROSS_BOUNDS.north &&
+    lng >= RAVAL_CROSS_BOUNDS.west &&
+    lng <= RAVAL_CROSS_BOUNDS.east
+  );
+}
+
+/** La Rambla waypoints for forcing night routes around Raval (well-lit corridor). */
+const RAMBLA_WAYPOINTS = [
+  { lat: 41.3810, lng: 2.1734, name: "Plaça Catalunya end" },
+  { lat: 41.3790, lng: 2.1740, name: "La Rambla upper" },
+  { lat: 41.3760, lng: 2.1748, name: "La Rambla middle" },
+  { lat: 41.3735, lng: 2.1755, name: "La Rambla lower" },
+];
+
 // =============================================================
 // LOAD STREET QUALITY DATA (cached in memory after first request)
 // =============================================================
@@ -658,7 +683,7 @@ async function fetchOrsRoutes(
     console.log("[route] Night mode: boosting quiet/green weights");
   }
 
-  // Night mode: if origin or destination is inside Raval, route via nearest safe corridor first
+  // Night mode: force route around Raval via waypoints (avoid_polygons not reliable on ORS free tier)
   const originLat = origin[0];
   const originLng = origin[1];
   const destLat = destination[0];
@@ -667,18 +692,42 @@ async function fetchOrsRoutes(
   if (isNight) {
     const waypoints: [number, number][] = [];
     if (isInsideRaval(originLat, originLng)) {
-      const exit = findNearestSafeCorridor(originLat, originLng);
-      waypoints.push(exit);
+      waypoints.push(findNearestSafeCorridor(originLat, originLng));
       console.log("[route] Night mode: origin in Raval → route to nearest safe corridor first");
     }
     if (isInsideRaval(destLat, destLng)) {
-      const entry = findNearestSafeCorridor(destLat, destLng);
-      waypoints.push(entry);
+      waypoints.push(findNearestSafeCorridor(destLat, destLng));
       console.log("[route] Night mode: destination in Raval → route via nearest safe corridor");
     }
     if (waypoints.length > 0) {
       const fullWaypoints: [number, number][] = [...waypoints, destination];
       const safeRoute = await fetchOrsWaypointRoute(origin, fullWaypoints, intent, true);
+      return [{
+        coordinates: safeRoute.coordinates,
+        duration: safeRoute.duration,
+        distance: safeRoute.distance,
+      }];
+    }
+
+    // Route likely crosses Raval (origin/dest on opposite sides or inside): force via La Rambla
+    const originEastOfRaval = originLng > RAVAL_CROSS_BOUNDS.east;
+    const destWestOfRaval = destLng < RAVAL_CROSS_BOUNDS.west;
+    const originWestOfRaval = originLng < RAVAL_CROSS_BOUNDS.west;
+    const destEastOfRaval = destLng > RAVAL_CROSS_BOUNDS.east;
+    const routeLikelyCrossesRaval =
+      (originEastOfRaval && destWestOfRaval) ||
+      (originWestOfRaval && destEastOfRaval) ||
+      isInRavalForCrossCheck(originLat, originLng) ||
+      isInRavalForCrossCheck(destLat, destLng);
+
+    if (routeLikelyCrossesRaval) {
+      const midLat = (originLat + destLat) / 2;
+      const bestRambla = RAMBLA_WAYPOINTS.reduce((best, wp) =>
+        Math.abs(wp.lat - midLat) < Math.abs(best.lat - midLat) ? wp : best
+      );
+      const ramblaWp: [number, number] = [bestRambla.lat, bestRambla.lng];
+      console.log("[route] Night mode: route crosses Raval → forcing via La Rambla", bestRambla.name);
+      const safeRoute = await fetchOrsWaypointRoute(origin, [ramblaWp, destination], intent, true);
       return [{
         coordinates: safeRoute.coordinates,
         duration: safeRoute.duration,
@@ -701,15 +750,7 @@ async function fetchOrsRoutes(
     },
   };
 
-  // Night mode: avoid Raval interior when neither origin nor destination is inside
-  if (isNight && !isInsideRaval(originLat, originLng) && !isInsideRaval(destLat, destLng)) {
-    (body as Record<string, unknown>).options = {
-      avoid_polygons: RAVAL_AVOID_POLYGON,
-    };
-    console.log("[route] Night mode: adding avoid_polygons (Raval) to ORS request");
-  }
-
-  console.log("[route] ORS body:", JSON.stringify(body, null, 2));
+  console.log("ORS REQUEST BODY:", JSON.stringify(body, null, 2));
 
   const res = await fetch(
     "https://api.openrouteservice.org/v2/directions/foot-walking/geojson",
@@ -1805,7 +1846,7 @@ async function generateDescription(
 
   let userMessage = `Intent: ${intent}. Breakdown: noise=${breakdown.noise}, green=${breakdown.green}, clean=${breakdown.clean}, cultural=${breakdown.cultural}. Duration seconds: ${duration}. Distance meters: ${distance}.`;
   if (destinationName) userMessage += ` Destination: ${destinationName}.`;
-  if (nightMode) userMessage += " Night mode: true — generating tags for an after-dark walk; route uses well-lit, busy streets.";
+  if (nightMode) userMessage += " Night mode: true — generating tags for an after-dark walk; route may be rerouted via well-lit corridors (e.g. La Rambla). Prefer tags like 'avoids poorly-lit areas' or 'busy, well-lit corridors'.";
 
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -1836,14 +1877,14 @@ Examples:
 'leafy Eixample · low traffic · garden paths'
 'direct route · through Raval · busy but fast'
 
-If nightMode is true, you are generating for an after-dark walk. Include at least one safety-aware tag:
-- 'well-lit streets' or 'main roads' or 'busy corridors'
+If nightMode is true, you are generating for an after-dark walk (route may avoid Raval and use La Rambla / well-lit corridors). Include at least one safety-aware tag:
+- 'well-lit streets', 'main roads', 'busy corridors', 'avoids poorly-lit areas', or 'busy, well-lit corridors'
 Do NOT mention danger or safety concerns — frame positively.
 
 Night examples:
 'well-lit streets · main roads · quick route'
 'busy corridors · tree-lined · low traffic'
-'well-lit streets · busy corridors · quiet stretch'
+'avoids poorly-lit areas · busy, well-lit corridors · direct route'
 
 Respond with ONLY the tags, nothing else.`,
         },
