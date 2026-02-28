@@ -29,7 +29,7 @@ interface MapViewProps {
   showUserLocation?: boolean;
   /** When user taps a place-option pin on the map, call this (same as "GO" on the card). */
   onPlaceSelect?: (place: PlaceOption) => void;
-  /** When true, map is in navigation mode: arrow marker, follow user, zoom 17. */
+  /** When true, map is in navigation mode: arrow marker, neighbourhood zoom 15, no auto-follow. */
   isNavigating?: boolean;
   /** Called when user exits navigation (e.g. X button). */
   onExitNavigation?: () => void;

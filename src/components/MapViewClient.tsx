@@ -170,8 +170,6 @@ function NavigationMapController({
   isNavigating,
   userPosition,
   initialNavCenter,
-  autoFollow,
-  onDragStart,
   routeCoordinates,
   center,
   zoom,
@@ -179,8 +177,6 @@ function NavigationMapController({
   isNavigating: boolean;
   userPosition: { lat: number; lng: number } | null;
   initialNavCenter?: [number, number];
-  autoFollow: boolean;
-  onDragStart: () => void;
   routeCoordinates?: [number, number][];
   center: LatLngExpression;
   zoom: number;
@@ -213,26 +209,73 @@ function NavigationMapController({
     if (!latLng) return;
     const [lat, lng] = latLng;
     const t = setTimeout(() => {
-      map.flyTo([lat, lng], 18, {
+      map.flyTo([lat, lng], 15, {
         duration: 1.0,
         easeLinearity: 0.25,
       });
     }, 100);
     return () => clearTimeout(t);
   }, [isNavigating, map, userPosition, initialNavCenter]);
-  useEffect(() => {
-    if (!isNavigating || !userPosition || !autoFollow) return;
-    map.panTo([userPosition.lat, userPosition.lng], { animate: true, duration: 0.5 });
-  }, [isNavigating, userPosition?.lat, userPosition?.lng, autoFollow, map]);
-  useEffect(() => {
-    if (!isNavigating) return;
-    const onDrag = () => onDragStart();
-    map.on("dragstart", onDrag);
-    return () => {
-      map.off("dragstart", onDrag);
-    };
-  }, [isNavigating, onDragStart, map]);
   return null;
+}
+
+/** During navigation, detect when user position leaves the visible map bounds and report so the recenter button can show. */
+function NavigationOffScreenDetector({
+  isNavigating,
+  userPosition,
+  onOffScreenChange,
+}: {
+  isNavigating: boolean;
+  userPosition: { lat: number; lng: number } | null;
+  onOffScreenChange: (offScreen: boolean) => void;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (!isNavigating || !userPosition) {
+      onOffScreenChange(false);
+      return;
+    }
+    const check = () => {
+      const bounds = map.getBounds();
+      const visible = bounds.contains([userPosition.lat, userPosition.lng]);
+      onOffScreenChange(!visible);
+    };
+    check();
+    map.on("moveend", check);
+    return () => {
+      map.off("moveend", check);
+    };
+  }, [isNavigating, userPosition?.lat, userPosition?.lng, map, onOffScreenChange]);
+  return null;
+}
+
+/** Recenter button: only visible during navigation when user is off-screen. Flies to user at zoom 15. */
+function NavigationRecenterButton({
+  isNavigating,
+  showRecenter,
+  userPosition,
+  onRecenter,
+}: {
+  isNavigating: boolean;
+  showRecenter: boolean;
+  userPosition: { lat: number; lng: number } | null;
+  onRecenter: () => void;
+}) {
+  const map = useMap();
+  if (!isNavigating || !showRecenter || !userPosition) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        map.flyTo([userPosition.lat, userPosition.lng], 15, { duration: 0.5 });
+        onRecenter();
+      }}
+      className="fixed bottom-32 right-4 z-[450] bg-black text-white w-10 h-10 rounded-full flex items-center justify-center shadow-lg text-lg font-mono"
+      aria-label="Recenter on my position"
+    >
+      ◎
+    </button>
+  );
 }
 
 function MapZoomControls() {
@@ -394,7 +437,7 @@ interface MapViewClientProps {
   showUserLocation?: boolean;
   /** When user taps a place-option pin, call this (same as "GO" on the card). */
   onPlaceSelect?: (place: PlaceOption) => void;
-  /** When true, map is in navigation mode: arrow marker, follow user, zoom 17. */
+  /** When true, map is in navigation mode: arrow marker, neighbourhood zoom 15, no auto-follow. */
   isNavigating?: boolean;
   /** Called when user exits navigation. */
   onExitNavigation?: () => void;
@@ -442,7 +485,7 @@ export default function MapViewClient({
   customStartCoords,
 }: MapViewClientProps) {
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
-  const [autoFollow, setAutoFollow] = useState(true);
+  const [showRecenter, setShowRecenter] = useState(false);
   const [seenPoiKeys, setSeenPoiKeys] = useState<Set<string>>(() => new Set());
   const [toastPoi, setToastPoi] = useState<{ name: string; description?: string; placeId?: string; photoRef?: string | null; type?: string } | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -652,14 +695,20 @@ export default function MapViewClient({
           isNavigating={isNavigating}
           userPosition={userPosition}
           initialNavCenter={initialNavCenter}
-          autoFollow={autoFollow}
-          onDragStart={() => {
-            setAutoFollow(false);
-            setTimeout(() => setAutoFollow(true), 5000);
-          }}
           routeCoordinates={routeCoordinates}
           center={center}
           zoom={zoom}
+        />
+        <NavigationOffScreenDetector
+          isNavigating={isNavigating}
+          userPosition={userPosition}
+          onOffScreenChange={setShowRecenter}
+        />
+        <NavigationRecenterButton
+          isNavigating={isNavigating}
+          showRecenter={showRecenter}
+          userPosition={userPosition}
+          onRecenter={() => setShowRecenter(false)}
         />
         {routeCoordinates?.length ? (
           <>
