@@ -707,7 +707,7 @@ export default function MapViewClient({
             </button>
             {(() => {
               const photoUrls =
-                toastPoi.photo_urls?.length > 0
+                (toastPoi.photo_urls?.length ?? 0) > 0
                   ? toastPoi.photo_urls
                   : toastPoi.photo_url
                     ? [toastPoi.photo_url]
