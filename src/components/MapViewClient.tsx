@@ -64,6 +64,34 @@ function MapCenterUpdater({
   return null;
 }
 
+/** When flyToCenter is set (custom FROM), fly to it at zoom 15. When cleared, fly to center (GPS). */
+function FlyToCenterOnChange({
+  center,
+  flyToCenter,
+  skipWhenPlaceOptions,
+  skipWhenNavigating,
+}: {
+  center: LatLngExpression;
+  flyToCenter?: [number, number] | null;
+  skipWhenPlaceOptions?: boolean;
+  skipWhenNavigating?: boolean;
+}) {
+  const map = useMap();
+  const prevFlyToCenterRef = useRef<[number, number] | null | undefined>(undefined);
+  useEffect(() => {
+    if (skipWhenPlaceOptions || skipWhenNavigating) return;
+    if (flyToCenter != null) {
+      map.flyTo([flyToCenter[0], flyToCenter[1]], 15, { duration: 0.8 });
+      prevFlyToCenterRef.current = flyToCenter;
+    } else if (prevFlyToCenterRef.current != null) {
+      const [lat, lng] = Array.isArray(center) ? center : [center.lat, center.lng];
+      map.flyTo([lat, lng], 15, { duration: 0.8 });
+      prevFlyToCenterRef.current = null;
+    }
+  }, [map, center, flyToCenter, skipWhenPlaceOptions, skipWhenNavigating]);
+  return null;
+}
+
 function FitRouteBounds({
   routeCoordinates,
   isNavigating,
@@ -380,6 +408,8 @@ interface MapViewClientProps {
   isLoopRoute?: boolean;
   /** Called when the user's GPS position updates (for proximity checks, e.g. before starting navigation). */
   onUserPositionChange?: (lat: number, lng: number) => void;
+  /** When set (e.g. custom FROM location), map flies to this [lat, lng] at zoom 15. When cleared, map flies to center (GPS). */
+  flyToCenter?: [number, number] | null;
 }
 
 export default function MapViewClient({
@@ -406,6 +436,7 @@ export default function MapViewClient({
   onArrived,
   isLoopRoute = false,
   onUserPositionChange,
+  flyToCenter,
 }: MapViewClientProps) {
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -608,6 +639,7 @@ export default function MapViewClient({
         zoomControl={false}
       >
         <MapCenterUpdater center={center} zoom={zoom} skipWhenPlaceOptions={!!placeOptions?.length} skipWhenNavigating={isNavigating} />
+        <FlyToCenterOnChange center={center} flyToCenter={flyToCenter} skipWhenPlaceOptions={!!placeOptions?.length} skipWhenNavigating={isNavigating} />
         <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
         <MapZoomControls />
         {!isNavigating && <FitRouteBounds routeCoordinates={routeCoordinates} isNavigating={isNavigating} />}

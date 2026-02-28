@@ -43,6 +43,8 @@ interface MapViewProps {
   isLoopRoute?: boolean;
   /** Called when the user's GPS position updates (for proximity checks). */
   onUserPositionChange?: (lat: number, lng: number) => void;
+  /** When set (e.g. custom FROM location), map flies to this [lat, lng] at zoom 15. When cleared, flies to center (GPS). */
+  flyToCenter?: [number, number] | null;
 }
 
 export default function MapView({
@@ -69,6 +71,7 @@ export default function MapView({
   onArrived,
   isLoopRoute = false,
   onUserPositionChange,
+  flyToCenter,
 }: MapViewProps) {
   return (
     <div className="absolute inset-0" style={{ zIndex: 1 }}>
@@ -96,6 +99,7 @@ export default function MapView({
         onArrived={onArrived}
         isLoopRoute={isLoopRoute}
         onUserPositionChange={onUserPositionChange}
+        flyToCenter={flyToCenter}
       />
     </div>
   );

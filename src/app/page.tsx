@@ -627,8 +627,9 @@ function PageContent() {
         </div>
             )}
               <MapView
-                center={mapCenter ?? BARCELONA_CENTER}
+                center={customStart?.coords ?? mapCenter ?? BARCELONA_CENTER}
                 zoom={DEFAULT_ZOOM}
+                flyToCenter={customStart?.coords ?? null}
               routeCoordinates={
                 routes
                   ? showQuick && routes.quick
@@ -741,34 +742,35 @@ function PageContent() {
                         <p className="font-mono text-[9px] text-[#4A90D9] mt-2">
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
-                        <div className="mt-2">
+                        <div className="mt-4">
                             {routes.quick && !routes.routes_are_similar && routes.pattern !== "mood_and_area" && (
-                              showQuick ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setShowQuick(false)}
-                                  className="text-base text-gray-600 underline reroute-uppercase"
-                                >
-                                  {routes.default_is_fastest ? "Use fastest route" : getUseRouteLabel(routes.intent)}
-                                </button>
-                              ) : (
-                                <p className="text-base text-gray-500 reroute-uppercase">
-                                  {routes.default_is_fastest
-                                    ? `${getIntentRouteLabel(routes.intent)}: ${formatDuration(routes.quick.duration)} — `
-                                    : `Fastest route: ${formatDuration(routes.quick.duration)} — `}
+                              <div className="mb-2">
+                                {showQuick ? (
                                   <button
                                     type="button"
-                                    onClick={() => setShowQuick(true)}
-                                    className="text-foreground underline"
+                                    onClick={() => setShowQuick(false)}
+                                    className="text-base text-gray-600 underline reroute-uppercase"
                                   >
-                                    Switch
+                                    {routes.default_is_fastest ? "Use fastest route" : getUseRouteLabel(routes.intent)}
                                   </button>
-                                </p>
-                              )
+                                ) : (
+                                  <p className="text-base text-gray-500 reroute-uppercase">
+                                    {routes.default_is_fastest
+                                      ? `${getIntentRouteLabel(routes.intent)}: ${formatDuration(routes.quick.duration)} — `
+                                      : `Fastest route: ${formatDuration(routes.quick.duration)} — `}
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowQuick(true)}
+                                      className="text-foreground underline"
+                                    >
+                                      Switch
+                                    </button>
+                                  </p>
+                                )}
+                              </div>
                             )}
-                        </div>
-                        <div className="mt-3 flex gap-2">
-                          {routes.pattern === "mood_and_area" && lastRouteMoodText.trim() && (
+                            <div className="flex gap-2">
+                              {routes.pattern === "mood_and_area" && lastRouteMoodText.trim() && (
                             <button
                               type="button"
                               onClick={handleTryAnotherRoute}
@@ -776,11 +778,11 @@ function PageContent() {
                               className="flex-1 py-3 border border-gray-300 text-gray-700 text-sm reroute-uppercase font-medium rounded-none hover:bg-gray-50 disabled:opacity-50"
                             >
                               ↻ Try another
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
+                              </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
                             const active = showQuick && routes?.quick ? routes.quick : routes?.recommended;
                             if (!active) return;
                             const routeCoords = active.coordinates;
@@ -806,11 +808,12 @@ function PageContent() {
                             setRemainingTime(formatDuration(active.duration));
                             setHasArrived(false);
                             setIsNavigating(true);
-                          }}
-                            className="flex-1 py-3 bg-black text-white text-base reroute-uppercase font-medium rounded-none"
-                          >
-                            Let&apos;s go
-                          </button>
+                                }}
+                                className="flex-1 py-3 bg-black text-white text-base reroute-uppercase font-medium rounded-none"
+                              >
+                                Let&apos;s go
+                              </button>
+                            </div>
                         </div>
                       </>
                     );
