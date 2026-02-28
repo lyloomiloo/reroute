@@ -3426,7 +3426,7 @@ export async function POST(req: NextRequest) {
       highlights: quickHighlights,
     };
 
-    const routesAreSimilar = Math.abs(recommended.duration - quick.duration) < 60;
+    const routesAreSimilar = Math.abs(recommended.duration - quick.duration) < 30;
 
     return NextResponse.json({
       recommended: defaultToFastest ? quickPayload : recommendedPayload,

@@ -10,6 +10,8 @@ interface MapViewProps {
   center: LatLngExpression;
   zoom: number;
   routeCoordinates?: [number, number][];
+  /** Alternative route (e.g. quick) shown as lighter dashed line when not navigating. */
+  alternativeRouteCoordinates?: [number, number][] | null;
   highlights?: RouteHighlight[];
   endPoint?: [number, number];
   /** Destination POI info for the end-point marker popup. */
@@ -43,6 +45,7 @@ export default function MapView({
   center,
   zoom,
   routeCoordinates,
+  alternativeRouteCoordinates,
   highlights,
   endPoint,
   destinationName,
@@ -67,6 +70,7 @@ export default function MapView({
         center={center}
         zoom={zoom}
         routeCoordinates={routeCoordinates}
+        alternativeRouteCoordinates={alternativeRouteCoordinates}
         highlights={highlights}
         endPoint={endPoint}
         destinationName={destinationName}

@@ -592,6 +592,13 @@ function PageContent() {
                     : routes.recommended.coordinates
                   : undefined
               }
+              alternativeRouteCoordinates={
+                routes?.quick && !routes.routes_are_similar && routes.pattern !== "mood_and_area"
+                  ? showQuick
+                    ? routes.recommended.coordinates
+                    : routes.quick.coordinates
+                  : null
+              }
               highlights={routes ? (showQuick && routes.quick ? routes.quick.highlights : routes.recommended.highlights) : undefined}
               endPoint={routes?.end_point}
               destinationName={destinationName}

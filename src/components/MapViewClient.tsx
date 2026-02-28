@@ -345,6 +345,8 @@ interface MapViewClientProps {
   center: LatLngExpression;
   zoom: number;
   routeCoordinates?: [number, number][];
+  /** Alternative route (e.g. quick) drawn as lighter dashed line when not navigating. */
+  alternativeRouteCoordinates?: [number, number][] | null;
   highlights?: RouteHighlight[];
   endPoint?: [number, number];
   /** Destination POI info for the end-point marker popup. */
@@ -380,6 +382,7 @@ export default function MapViewClient({
   center,
   zoom,
   routeCoordinates,
+  alternativeRouteCoordinates,
   highlights,
   endPoint,
   destinationName,
@@ -624,6 +627,17 @@ export default function MapViewClient({
                 }}
               />
             )}
+            {!isNavigating && alternativeRouteCoordinates?.length ? (
+              <Polyline
+                positions={alternativeRouteCoordinates.map(([lng, lat]) => [lat, lng] as [number, number])}
+                pathOptions={{
+                  color: "#999",
+                  weight: 3,
+                  dashArray: "5,10",
+                  opacity: 0.7,
+                }}
+              />
+            ) : null}
             <Polyline
               positions={routeCoordinates.map(([lng, lat]) => [lat, lng] as [number, number])}
               pathOptions={{
