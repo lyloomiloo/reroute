@@ -8,6 +8,8 @@ import {
   getRoute,
   getRouteWithDuration,
   getRouteWithDestination,
+  getInitialBearing,
+  bearingToDirection,
   type RoutesResponse,
   type RouteHighlight,
   type PlaceOption,
@@ -692,6 +694,20 @@ function PageContent() {
                 })()
               }
               highlights={routes ? (showQuick && routes.quick ? routes.quick.highlights : routes.recommended.highlights) : undefined}
+              previewPois={
+                routes && !isNavigating
+                  ? (() => {
+                      const pattern = routes.pattern;
+                      const intent = routes.intent;
+                      const isLoop = routes.isLoop ?? false;
+                      const showPreviewPois =
+                        (pattern === "mood_only" && !isLoop && (intent === "discover" || intent === "scenic" || intent === "lively")) ||
+                        pattern === "themed_walk";
+                      const active = showQuick && routes.quick ? routes.quick : routes.recommended;
+                      return showPreviewPois && active?.pois?.length ? active.pois : null;
+                    })()
+                  : null
+              }
               endPoint={routes?.end_point}
               destinationName={destinationName}
               destinationDescription={destinationDescription}
@@ -775,7 +791,7 @@ function PageContent() {
                     const active = routes.quick && showQuick ? routes.quick : routes.recommended;
                     return (
                       <>
-                        <p className="font-mono font-bold text-lg leading-tight uppercase pr-8">{active.summary}</p>
+                        <p className="font-mono font-bold text-lg leading-tight uppercase pr-8">{(active.summary ?? "").replace(/^['"]|['"]$/g, "")}</p>
                         {routes.destination_name && (
                           routes.pattern === "mood_and_area" ? (
                             <p className="font-mono text-sm text-gray-500 mt-2">
@@ -797,6 +813,11 @@ function PageContent() {
                         <p className="font-mono text-xs text-gray-400">
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
                         </p>
+                        {routes.isLoop && active.coordinates?.length >= 2 && (
+                          <p className="font-mono text-sm text-gray-400 mt-1">
+                            Head {bearingToDirection(getInitialBearing(active.coordinates))} · loops back here
+                          </p>
+                        )}
                         <p className="font-mono text-[9px] text-[#4A90D9] mt-2">
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>

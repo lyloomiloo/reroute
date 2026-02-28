@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import type { LatLngExpression } from "leaflet";
-import type { RouteHighlight, PlaceOption } from "@/lib/routing";
+import type { RouteHighlight, PlaceOption, RoutePreviewPoi } from "@/lib/routing";
 
 const MapViewClient = dynamic(() => import("./MapViewClient"), { ssr: false });
 
@@ -47,6 +47,8 @@ interface MapViewProps {
   flyToCenter?: [number, number] | null;
   /** When set, show a marker at the custom start location (hidden when route exists or navigating). */
   customStartCoords?: [number, number] | null;
+  /** POIs to show during route preview (discovery/themed_walk) — label-style pins, tappable for toast. */
+  previewPois?: RoutePreviewPoi[] | null;
 }
 
 export default function MapView({
@@ -75,6 +77,7 @@ export default function MapView({
   onUserPositionChange,
   flyToCenter,
   customStartCoords,
+  previewPois,
 }: MapViewProps) {
   return (
     <div className="absolute inset-0" style={{ zIndex: 1 }}>
@@ -104,6 +107,7 @@ export default function MapView({
         onUserPositionChange={onUserPositionChange}
         flyToCenter={flyToCenter}
         customStartCoords={customStartCoords}
+        previewPois={previewPois ?? undefined}
       />
     </div>
   );

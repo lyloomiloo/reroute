@@ -19,6 +19,16 @@ export interface RouteHighlight {
   photoRef?: string | null;
 }
 
+/** POI for preview (discovery/themed_walk) — shown on map before navigation. */
+export interface RoutePreviewPoi {
+  name: string;
+  lat: number;
+  lng: number;
+  type: string;
+  photo_url?: string | null;
+  description?: string | null;
+}
+
 export interface RouteResult {
   coordinates: [number, number][];
   duration: number;
@@ -32,6 +42,8 @@ export interface RouteResult {
     cultural: number;
   };
   highlights?: RouteHighlight[];
+  /** Up to 5 POIs for discovery/themed_walk preview (show on map before LET'S GO). */
+  pois?: RoutePreviewPoi[];
 }
 
 export interface PlaceOption {
@@ -291,4 +303,27 @@ export async function getRouteWithDestination(
     place_options: Array.isArray(data.place_options) ? data.place_options : undefined,
     default_is_fastest: data.default_is_fastest === true,
   };
+}
+
+/** Initial bearing in degrees (0–360) from start toward a point ~200m into the route. Coords are [lng, lat] (GeoJSON). */
+export function getInitialBearing(coords: [number, number][]): number {
+  if (!coords?.length || coords.length < 2) return 0;
+  const start = coords[0];
+  const lookAhead = coords[Math.min(10, coords.length - 1)];
+  const startLng = start[0];
+  const startLat = start[1];
+  const endLng = lookAhead[0];
+  const endLat = lookAhead[1];
+  const dLng = ((endLng - startLng) * Math.PI) / 180;
+  const lat1 = (startLat * Math.PI) / 180;
+  const lat2 = (endLat * Math.PI) / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+}
+
+/** Map bearing (0–360) to a short direction label. */
+export function bearingToDirection(bearing: number): string {
+  const dirs = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
+  return dirs[Math.round(bearing / 45) % 8];
 }

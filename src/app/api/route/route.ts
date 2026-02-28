@@ -1125,6 +1125,7 @@ IMPORTANT CLASSIFICATION RULES:
 - Open-ended vibe/theme with no specific destination → mood_only: "scenic walk", "peaceful stroll", "pretty route" = mood_only (no POI, no destination; we ask duration). Exception: "architecture hunt", "architecture walk", "see cool buildings" → themed_walk (see architecture rule below).
 - ARCHITECTURE: "architecture hunt", "architecture walk", "see cool buildings" → themed_walk with poi_query "notable architecture landmark building Barcelona", theme_name "architecture hunt". Do NOT use "architecture" alone — it returns offices/firms. For Barcelona, target Modernisme buildings, churches, notable facades. "architecture hunt in [area]" → themed_walk with poi_query "notable architecture landmark building [area] Barcelona", area: "[area]", theme_name "architecture hunt".
 - Specific place or area → has destination: "walk to Sagrada Familia", "cafe near Gràcia", "route to Park Güell", "get me to Barceloneta" = mood_and_destination or mood_and_area (do not ask duration).
+- "[adjective] way/route/path/walk to [place]" is ALWAYS mood_and_destination (or mood_and_area if place is an area like "the beach"). The words "way", "route", "path", "walk" before "to [destination]" mean the user wants to GO somewhere with a mood — use mood_and_destination (or mood_and_area for areas), NOT mood_only. Examples: "fun way to ELISAVA" → intent lively, pattern mood_and_destination, destination "ELISAVA". "nice way to the beach" → intent scenic, pattern mood_and_area, area "Barceloneta". "quick way to Park Güell" → intent quick, pattern mood_and_destination, destination "Park Güell". "pretty way to Gràcia" → intent scenic, pattern mood_and_destination or mood_and_area. "safe way to the station" → intent calm, pattern mood_and_destination. "interesting way to the museum" → intent discover, pattern mood_and_destination.
 - If the user wants to GO TO a specific named place → mood_and_destination
 - If the user wants to GO TO a type of place (one cafe, one gym) → mood_and_poi
 - If the user wants to WALK PAST multiple places of a theme → themed_walk
@@ -1187,6 +1188,12 @@ Examples:
 - "quick but nice walk to ELISAVA" → intent: scenic, pattern: mood_and_destination
 - "I'm late for class at ELISAVA" → intent: quick, pattern: mood_and_destination
 - "need to be at Sagrada Familia by 3" → intent: quick, pattern: mood_and_destination
+- "fun way to ELISAVA" → intent: lively, pattern: mood_and_destination, destination: "ELISAVA"
+- "nice way to the beach" → intent: scenic, pattern: mood_and_area, area: "Barceloneta"
+- "quick way to Park Güell" → intent: quick, pattern: mood_and_destination, destination: "Park Güell"
+- "pretty way to Gràcia" → intent: scenic, pattern: mood_and_destination or mood_and_area, destination/area: "Gràcia"
+- "safe way to the station" → intent: calm, pattern: mood_and_destination
+- "interesting way to the museum" → intent: discover, pattern: mood_and_destination
 
 EMOTIONAL SENSITIVITY: When the user expresses distress, sadness, or vulnerability, respond with care. "I want to cry somewhere private", "need to be alone", "somewhere private to sit" → mood_and_poi, intent calm, poi_query "quiet courtyard garden hidden plaza bench Barcelona", theme_name "emotional_support". "I need to clear my head" → mood_only, intent calm. "feeling overwhelmed" → mood_only, intent calm, theme_name "emotional_support". "I just need to breathe" → mood_only, intent nature. For emotional_support, poi_query must target NEARBY, QUIET, NON-TOURISTY places. NEVER suggest: major tourist attractions (Park Güell, Sagrada Familia, La Rambla), parks that are far away or require long walks, busy plazas or commercial areas. Good: small neighbourhood plazas, church courtyards, quiet garden corners, university cloisters, hidden patios. Example poi_queries: "quiet courtyard cloister hidden garden Barcelona", "peaceful plaza bench quiet park Barcelona". NOT "park Barcelona" (returns Park Güell). When theme_name is "emotional_support", the app will use a gentler tone and avoid unsafe zones regardless of time.
 
@@ -1677,6 +1684,78 @@ async function searchPlace(
   return out;
 }
 
+/** Legacy Places Text Search — more forgiving of typos and partial names. Used as fallback for destination resolution. */
+async function textSearchPlaceLegacy(
+  query: string,
+  nearLat: number,
+  nearLng: number,
+  maxResults: number = 5
+): Promise<PlaceOptionResult[]> {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY ?? process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return [];
+  const radius = 15000;
+  const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&location=${nearLat},${nearLng}&radius=${radius}&key=${apiKey}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      status: string;
+      results?: Array<{
+        name?: string;
+        formatted_address?: string;
+        geometry?: { location?: { lat?: number; lng?: number } };
+        rating?: number;
+        photos?: Array<{ photo_reference?: string }>;
+        types?: string[];
+      }>;
+    };
+    if (data.status !== "OK" && data.status !== "ZERO_RESULTS") return [];
+    const results = data.results ?? [];
+    const out: PlaceOptionResult[] = [];
+    for (const r of results.slice(0, maxResults)) {
+      const lat = r.geometry?.location?.lat;
+      const lng = r.geometry?.location?.lng;
+      if (lat == null || lng == null || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) continue;
+      const latN = Number(lat);
+      const lngN = Number(lng);
+      if (!isInBarcelonaForValidation(latN, lngN)) continue;
+      const name = r.name?.trim() ?? "";
+      if (!name) continue;
+      const primaryType = r.types?.[0] ?? null;
+      // Legacy API photo would require server-side proxy to avoid exposing key; omit for now
+      out.push({
+        name,
+        description: r.formatted_address?.trim() ?? placeTypeToLabel(primaryType ?? undefined),
+        lat: latN,
+        lng: lngN,
+        rating: typeof r.rating === "number" && Number.isFinite(r.rating) ? r.rating : null,
+        summary: null,
+        photo_url: null,
+        primary_type: primaryType ?? null,
+        address: r.formatted_address?.trim() ?? null,
+      });
+    }
+    return out;
+  } catch (e) {
+    console.warn("[places] Legacy text search failed:", e);
+    return [];
+  }
+}
+
+/** Resolve destination for mood_and_destination / destination_only: try exact, then +barcelona, then legacy text search. */
+async function resolveDestination(
+  query: string,
+  originLat: number,
+  originLng: number
+): Promise<PlaceOptionResult[]> {
+  let results = await searchPlace(query, originLat, originLng, 5, 5000);
+  if (results.length > 0) return results;
+  results = await searchPlace(`${query} barcelona`, originLat, originLng, 5, 8000);
+  if (results.length > 0) return results;
+  results = await textSearchPlaceLegacy(`${query} barcelona`, originLat, originLng, 5);
+  return results;
+}
+
 /** Queries to find a meaningful walk destination for mood_only (parks, viewpoints, plazas, etc.). */
 const MOOD_ONLY_DESTINATION_QUERIES: Record<Intent, string[]> = {
   calm: ["park Barcelona", "garden Barcelona", "quiet plaza Barcelona", "waterfront promenade Barcelona"],
@@ -1869,6 +1948,11 @@ async function enrichHighlightsWithPhotos(
   return results;
 }
 
+function stripSummaryQuotes(s: string | null | undefined): string {
+  if (s == null || typeof s !== "string") return "";
+  return s.replace(/^['"]|['"]$/g, "").trim();
+}
+
 function softenSummaryForEmotionalSupport(summary: string | null | undefined): string {
   if (!summary) return "A quiet, peaceful walk";
   const softened = summary
@@ -1929,7 +2013,7 @@ Bad (too generic):
       messages: [
         {
           role: "system",
-          content: `You generate short route tags for walking routes in Barcelona. Return 3-4 descriptive tags separated by ' · '. Each tag is 1-3 words max.
+          content: `You generate short route tags for walking routes in Barcelona. Return 3-4 descriptive tags separated by ' · '. Each tag is 1-3 words max. Do NOT wrap the output in quotes — return only the tags (e.g. quiet streets · tree-lined · low traffic).
 
 Tags should describe the walking EXPERIENCE, not tourist attractions. Use simple, concrete language like: 'well-lit streets', 'tree-lined paths', 'quiet residential streets', 'busy main roads', 'pedestrian zones', 'park paths', 'low noise', 'leafy streets'. Do NOT use promotional language like 'cultural highlights', 'historic lanes', 'cultural lanes', or 'garden paths' — prefer plain route descriptions.
 
@@ -2458,10 +2542,7 @@ export async function POST(req: NextRequest) {
                 destCoords = fallback;
                 destination_name = name;
               } else {
-                let places = await searchPlace(name, originCoords[0], originCoords[1], 5, 5000);
-                if (places.length === 0) {
-                  places = await searchPlace(`${name} barcelona`, originCoords[0], originCoords[1], 5, 8000);
-                }
+                let places = await resolveDestination(name, originCoords[0], originCoords[1]);
                 if (places.length === 0) {
                   const geo = await geocodePlace(name);
                   if (geo) {
@@ -2469,7 +2550,7 @@ export async function POST(req: NextRequest) {
                     destination_name = name;
                   } else {
                     return NextResponse.json(
-                      { error: "Couldn't find that place. Try the full name or address." },
+                      { error: "Couldn't find that place — check the spelling or try a more specific name." },
                       { status: 400 }
                     );
                   }
@@ -3579,6 +3660,25 @@ export async function POST(req: NextRequest) {
         // keep template
       }
       if (isEmotionalSupport && summary) summary = softenSummaryForEmotionalSupport(summary);
+      const isDiscoveryOneWay = !isLoop && (intent === "discover" || intent === "scenic" || intent === "lively");
+      const nonDestHighlights = highlights.filter((h) => h.type !== "destination");
+      if (isDiscoveryOneWay && nonDestHighlights.length > 0) {
+        const passNames = nonDestHighlights.slice(0, 3).map((h) => h.name ?? h.label).filter(Boolean);
+        if (passNames.length > 0) {
+          summary = `Passes ${passNames.join(", ")} · towards ${destination_name || "the area"}`;
+        }
+      }
+      const poisForPreview =
+        isDiscoveryOneWay && nonDestHighlights.length > 0
+          ? nonDestHighlights.slice(0, 5).map((h) => ({
+              name: h.name ?? h.label,
+              lat: h.lat,
+              lng: h.lng,
+              type: h.type,
+              photo_url: h.photo_url ?? null,
+              description: h.description ?? null,
+            }))
+          : undefined;
       const oneWayResult = {
         coordinates: simplifyRoute(oneWayRoute.coordinates, 0.00008),
         duration: oneWayRoute.duration,
@@ -3587,6 +3687,7 @@ export async function POST(req: NextRequest) {
         breakdown,
         summary,
         highlights,
+        ...(poisForPreview && { pois: poisForPreview }),
       };
       return NextResponse.json({
         recommended: oneWayResult,
@@ -3773,14 +3874,14 @@ export async function POST(req: NextRequest) {
     if (intent !== "quick" || isNight) {
       try {
         const recDesc = await generateDescription(intent, recommended.breakdown, recDuration, recDistance, destination_name, isNight);
-        if (recDesc) recommendedSummary = recDesc;
+        if (recDesc) recommendedSummary = stripSummaryQuotes(recDesc) || recDesc;
       } catch {
         /* keep template */
       }
     }
     try {
       const qDesc = await generateDescription("quick", quick.breakdown, qDuration, qDistance, destination_name, isNight);
-      if (qDesc) quickSummary = qDesc;
+      if (qDesc) quickSummary = stripSummaryQuotes(qDesc) || qDesc;
     } catch (err) {
       console.warn("[route] generateDescription failed for quick summary:", err);
     }
@@ -3818,6 +3919,47 @@ export async function POST(req: NextRequest) {
       )
     );
 
+    const isDiscoveryPreview = pattern === "themed_walk";
+    const recommendedPois =
+      isDiscoveryPreview && recommendedHighlights.length > 0
+        ? recommendedHighlights
+            .filter((h) => h.type !== "destination")
+            .slice(0, 5)
+            .map((h) => ({
+              name: h.name ?? h.label,
+              lat: h.lat,
+              lng: h.lng,
+              type: h.type,
+              photo_url: (h as { photo_url?: string | null }).photo_url ?? null,
+              description: (h as { description?: string | null }).description ?? null,
+            }))
+        : undefined;
+    const quickPois =
+      isDiscoveryPreview && quickHighlights.length > 0
+        ? quickHighlights
+            .filter((h) => h.type !== "destination")
+            .slice(0, 5)
+            .map((h) => ({
+              name: h.name ?? h.label,
+              lat: h.lat,
+              lng: h.lng,
+              type: h.type,
+              photo_url: (h as { photo_url?: string | null }).photo_url ?? null,
+              description: (h as { description?: string | null }).description ?? null,
+            }))
+        : undefined;
+    if (pattern === "themed_walk" && recommendedPois && recommendedPois.length > 0 && destination_name) {
+      const passNames = recommendedPois.slice(0, 3).map((p) => p.name).filter(Boolean);
+      if (passNames.length > 0) {
+        recommendedSummary = `Passes ${passNames.join(", ")} · towards ${destination_name}`;
+      }
+      if (quickPois && quickPois.length > 0 && quickSummary) {
+        const qPassNames = quickPois.slice(0, 3).map((p) => p.name).filter(Boolean);
+        if (qPassNames.length > 0) {
+          quickSummary = `Passes ${qPassNames.join(", ")} · towards ${destination_name}`;
+        }
+      }
+    }
     const recommendedPayload = {
       coordinates: simplifyRoute(recommended.coordinates, 0.00008),
       duration: recDuration,
@@ -3826,6 +3968,7 @@ export async function POST(req: NextRequest) {
       score: recommended.score,
       breakdown: recommended.breakdown,
       highlights: recommendedHighlights,
+      ...(recommendedPois && recommendedPois.length > 0 && { pois: recommendedPois }),
     };
     const quickPayload = {
       coordinates: simplifyRoute(quick.coordinates, 0.00008),
@@ -3835,6 +3978,7 @@ export async function POST(req: NextRequest) {
       score: quick.score,
       breakdown: quick.breakdown,
       highlights: quickHighlights,
+      ...(quickPois && quickPois.length > 0 && { pois: quickPois }),
     };
 
     const routesAreSimilar = Math.abs(recommended.duration - quick.duration) < 30;

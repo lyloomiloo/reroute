@@ -5,7 +5,7 @@ import Image from "next/image";
 import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, CircleMarker, useMap } from "react-leaflet";
 import L from "leaflet";
 import type { LatLngExpression } from "leaflet";
-import type { RouteHighlight, PlaceOption } from "@/lib/routing";
+import type { RouteHighlight, PlaceOption, RoutePreviewPoi } from "@/lib/routing";
 import {
   GEOLOCATION_OPTIONS,
   handleGeolocationError,
@@ -455,6 +455,8 @@ interface MapViewClientProps {
   flyToCenter?: [number, number] | null;
   /** When set, show a marker at the custom start location (hidden when route exists or navigating). */
   customStartCoords?: [number, number] | null;
+  /** POIs to show during route preview (discovery/themed_walk) — label-style pins, tappable for toast. */
+  previewPois?: RoutePreviewPoi[] | null;
 }
 
 export default function MapViewClient({
@@ -483,15 +485,17 @@ export default function MapViewClient({
   onUserPositionChange,
   flyToCenter,
   customStartCoords,
+  previewPois = null,
 }: MapViewClientProps) {
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
   const [showRecenter, setShowRecenter] = useState(false);
   const [seenPoiKeys, setSeenPoiKeys] = useState<Set<string>>(() => new Set());
-  const [toastPoi, setToastPoi] = useState<{ name: string; description?: string; placeId?: string; photoRef?: string | null; type?: string } | null>(null);
+  const [toastPoi, setToastPoi] = useState<{ name: string; description?: string; placeId?: string; photoRef?: string | null; photo_url?: string | null; type?: string } | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [selectedHighlight, setSelectedHighlight] = useState<RouteHighlight | null>(null);
   const placeOptionMarkerRefs = useRef<(L.Marker | null)[]>([]);
+  const mainRoutePolyRef = useRef<L.Polyline | null>(null);
 
   useEffect(() => {
     if (!placeOptions?.length || placeOptionsFocusedIndex == null) return;
@@ -546,6 +550,26 @@ export default function MapViewClient({
       onArrived();
     }
   }, [isNavigating, userPosition?.lat, userPosition?.lng, routeCoordinates, onRemainingUpdate, onArrived, isLoopRoute]);
+
+  // Animated flowing dashes on loop route (preview only): add class to path so CSS can run stroke-dashoffset animation
+  useEffect(() => {
+    if (!isLoopRoute || isNavigating || !routeCoordinates?.length) return;
+    const getPath = (): SVGPathElement | null => {
+      const r = mainRoutePolyRef.current as (L.Polyline & { _path?: SVGPathElement }) | { leafletElement?: L.Polyline & { _path?: SVGPathElement } } | null;
+      if (!r) return null;
+      const layer = "leafletElement" in r && r.leafletElement ? r.leafletElement : (r as L.Polyline & { _path?: SVGPathElement });
+      return (layer as L.Polyline & { _path?: SVGPathElement })._path ?? null;
+    };
+    const t = setTimeout(() => {
+      const path = getPath();
+      if (path) path.classList.add("route-flow");
+    }, 0);
+    return () => {
+      clearTimeout(t);
+      const path = getPath();
+      if (path) path.classList.remove("route-flow");
+    };
+  }, [isLoopRoute, isNavigating, routeCoordinates]);
 
   // Proximity check: when user is within 50m of an unseen POI, show toast and mark seen
   useEffect(() => {
@@ -632,14 +656,23 @@ export default function MapViewClient({
           {locationError}
         </div>
       )}
-      {isNavigating && toastPoi && (
+      {toastPoi && (
         <div
           className="fixed bottom-4 left-4 right-4 bg-white rounded-lg shadow-lg overflow-hidden animate-slide-up z-[250]"
           style={{ boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}
           role="status"
           aria-live="polite"
         >
-          {toastPoi.placeId ? (
+          {toastPoi.photo_url ? (
+            <img
+              src={toastPoi.photo_url}
+              alt={toastPoi.name}
+              className="w-full h-28 object-cover"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
+          ) : toastPoi.placeId ? (
             <img
               src={`/api/place-photo?name=places/${encodeURIComponent(toastPoi.placeId)}/photos/default`}
               alt={toastPoi.name}
@@ -734,10 +767,12 @@ export default function MapViewClient({
               />
             ) : null}
             <Polyline
+              ref={mainRoutePolyRef}
               positions={routeCoordinates.map(([lng, lat]) => [lat, lng] as [number, number])}
               pathOptions={{
                 ...(ROUTE_INTENT_COLORS[routeIntent ?? ""] ?? DEFAULT_ROUTE_COLOR),
                 weight: isNavigating ? 5 : 4,
+                ...(isLoopRoute && !isNavigating && { dashArray: "12 8" }),
               }}
             />
           </>
@@ -760,17 +795,19 @@ export default function MapViewClient({
                 </Tooltip>
               </CircleMarker>
             )}
-            <Marker
-              position={[routeCoordinates[routeCoordinates.length - 1][1], routeCoordinates[routeCoordinates.length - 1][0]]}
-              icon={NAV_END_SQUARE_ICON}
-              zIndexOffset={60}
-            >
-              {!isNavigating && (
-                <Tooltip permanent direction="top" className="font-mono text-[10px]">
-                  END
-                </Tooltip>
-              )}
-            </Marker>
+            {!isLoopRoute && (
+              <Marker
+                position={[routeCoordinates[routeCoordinates.length - 1][1], routeCoordinates[routeCoordinates.length - 1][0]]}
+                icon={NAV_END_SQUARE_ICON}
+                zIndexOffset={60}
+              >
+                {!isNavigating && (
+                  <Tooltip permanent direction="top" className="font-mono text-[10px]">
+                    END
+                  </Tooltip>
+                )}
+              </Marker>
+            )}
           </>
         )}
         {highlights?.map((h, i) => (
@@ -796,6 +833,7 @@ export default function MapViewClient({
                         description: h.description,
                         placeId: (h as RouteHighlight).placeId,
                         photoRef: (h as RouteHighlight).photoRef,
+                        photo_url: (h as RouteHighlight).photo_url ?? undefined,
                         type: h.type,
                       });
                     },
@@ -809,6 +847,33 @@ export default function MapViewClient({
             }
           />
         ))}
+        {previewPois && previewPois.length > 0 && !isNavigating &&
+          previewPois.map((poi, i) => {
+            const safeName = poi.name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+            return (
+              <Marker
+                key={`preview-poi-${i}-${poi.lat}-${poi.lng}`}
+                position={[poi.lat, poi.lng]}
+                icon={L.divIcon({
+                  className: "",
+                  html: `<div style="background: white; border: 1px solid black; padding: 2px 6px; font-family: monospace; font-size: 11px; white-space: nowrap; border-radius: 2px;">${safeName}</div>`,
+                  iconAnchor: [0, 0],
+                })}
+                zIndexOffset={45}
+                eventHandlers={{
+                  click: (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    setToastPoi({
+                      name: poi.name,
+                      description: poi.description ?? undefined,
+                      photo_url: poi.photo_url ?? undefined,
+                      type: poi.type,
+                    });
+                  },
+                }}
+              />
+            );
+          })}
         {customStartCoords && !isNavigating && !routeCoordinates?.length && (
           <Marker
             position={[customStartCoords[0], customStartCoords[1]]}

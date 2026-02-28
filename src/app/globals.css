@@ -74,6 +74,16 @@ body {
   border: none !important;
 }
 
+/* Loop route: flowing dashes show walking direction on the polyline */
+.route-flow {
+  animation: flow 2s linear infinite;
+}
+@keyframes flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
 @keyframes slide-up {
   from { transform: translateY(100%); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
