@@ -657,7 +657,28 @@ function scoreRoute(
     weights.cultural * avgCultural
   );
 
-  // Data-driven tags from street quality scores (top 2-3 by score, lowercase)
+  // Data-driven tags: prefer tags that match intent, never show tags that contradict mood
+  const INTENT_PREFERRED: Record<Intent, string[]> = {
+    calm: ["quiet streets", "leafy trees", "tree-lined streets", "green paths", "low traffic", "peaceful blocks", "pedestrian walkways", "well-kept streets"],
+    nature: ["quiet streets", "leafy trees", "tree-lined streets", "green paths", "park paths", "garden walkways", "low traffic", "pedestrian walkways"],
+    discover: ["historic buildings", "interesting facades", "car-free streets", "waterfront views", "pedestrian walkways"],
+    scenic: ["historic buildings", "interesting facades", "car-free streets", "waterfront views", "pedestrian walkways"],
+    lively: ["pedestrian walkways", "car-free streets", "interesting facades", "historic buildings"],
+    cafe: ["pedestrian walkways", "car-free streets", "interesting facades", "historic buildings"],
+    exercise: ["park paths", "tree-lined streets", "pedestrian walkways", "green paths", "leafy trees"],
+    quick: ["direct route", "main streets", "low traffic", "well-kept streets"],
+  };
+  const INTENT_FORBIDDEN: Record<Intent, string[]> = {
+    calm: ["busy corridors", "well-lit streets"],
+    nature: ["busy corridors", "well-lit streets"],
+    discover: [],
+    scenic: [],
+    lively: ["quiet streets", "peaceful blocks"],
+    cafe: ["quiet streets", "peaceful blocks"],
+    exercise: [],
+    quick: [],
+  };
+
   const candidates: { score: number; tag: string }[] = [];
   if (avgNoise > 0.5) candidates.push({ score: avgNoise, tag: "quiet streets" });
   if (avgNoise > 0.6) candidates.push({ score: avgNoise, tag: "peaceful blocks" });
@@ -668,10 +689,22 @@ function scoreRoute(
   if (avgClean > 0.85) candidates.push({ score: avgClean, tag: "well-kept streets" });
   if (avgCultural > 0.3) candidates.push({ score: avgCultural, tag: "historic buildings" });
   if (avgCultural > 0.35) candidates.push({ score: avgCultural, tag: "interesting facades" });
-  candidates.sort((a, b) => b.score - a.score);
+
+  const forbidden = new Set(INTENT_FORBIDDEN[intent]);
+  const preferred = INTENT_PREFERRED[intent];
+  const filtered = candidates.filter((c) => !forbidden.has(c.tag));
+  // Sort: preferred tags first (by order in list), then by score descending
+  filtered.sort((a, b) => {
+    const ia = preferred.indexOf(a.tag);
+    const ib = preferred.indexOf(b.tag);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return b.score - a.score;
+  });
   const seen = new Set<string>();
   const tags: string[] = [];
-  for (const { tag } of candidates) {
+  for (const { tag } of filtered) {
     if (tags.length >= 3) break;
     if (!seen.has(tag)) {
       seen.add(tag);
@@ -698,17 +731,19 @@ function buildSummary(duration: number, distance: number, tags: string[], intent
   if (intent === "quick" && !nightMode) {
     return "direct route";
   }
-  if (nightMode && intent === "quick") {
+  // Night-only safety tags: only when night mode is on and intent is not calm/nature (they never get these)
+  const allowNightSafetyTags = Boolean(nightMode) && intent !== "calm" && intent !== "nature";
+  if (allowNightSafetyTags && intent === "quick") {
     return "well-lit streets · busy corridors";
   }
   if (tags.length > 0) {
-    if (nightMode) {
+    if (allowNightSafetyTags) {
       const nightTags = ["well-lit streets", "busy corridors", ...tags];
       return nightTags.slice(0, 3).join(" · ");
     }
     return tags.slice(0, 3).join(" · ");
   }
-  if (nightMode) {
+  if (allowNightSafetyTags) {
     return "well-lit streets · busy corridors";
   }
   return "pleasant route";
