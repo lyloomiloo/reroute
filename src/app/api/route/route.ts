@@ -2881,7 +2881,7 @@ export async function POST(req: NextRequest) {
     console.log("[route] effectiveDuration:", effectiveDuration, "suggested_duration:", suggestedDuration, "mustAskDuration:", mustAskDuration);
 
     // Exception: night mode mood_only — skip picker and default to 20 min (only case we skip the picker besides user-stated duration)
-    if (isNight && pattern === "mood_only" && mustAskDuration && effectiveDuration == null) {
+    if (isNight && pattern === "mood_only" && mustAskDuration && effectiveDuration == null && (skipDuration || isSurprise)) {
       effectiveDuration = 20;
       mustAskDuration = false;
     }
@@ -3661,19 +3661,50 @@ export async function POST(req: NextRequest) {
         }
       }
       if (routeMinutes > maxAcceptableMinutes && !isSurprise) {
-        return NextResponse.json(
-          { error: "Couldn't find a route that fits your time. Try a longer duration." },
-          { status: 400 }
+        // Try once more with a much closer waypoint before giving up
+        const closerM = (effectiveDuration! * ROUTE_DISTANCE_M_PER_MIN) * 0.3;
+        const closerWp = clampWaypointToBarcelona(
+          waypointFromBearing(loopOrigin[0], loopOrigin[1], closerM, Math.random() * 360)
         );
+        try {
+          let retryRoute: { coordinates: [number, number][]; duration: number; distance: number } | null = null;
+          if (isLoop) {
+            const outRoutes = await fetchOrsRoutes(loopOrigin, closerWp, intent, forceAvoidZones);
+            if (outRoutes[0]) {
+              const returnOffset = offsetPerpendicular(closerWp[0], closerWp[1], loopOrigin[0], loopOrigin[1], 150);
+              const returnRoute = await fetchOrsWaypointRoute(closerWp, [returnOffset, loopOrigin], intent, forceAvoidZones);
+              retryRoute = {
+                coordinates: [...outRoutes[0].coordinates, ...returnRoute.coordinates.slice(1)] as [number, number][],
+                duration: outRoutes[0].duration + returnRoute.duration,
+                distance: outRoutes[0].distance + returnRoute.distance,
+              };
+            }
+          } else {
+            const outRoutes = await fetchOrsRoutes(loopOrigin, closerWp, intent, forceAvoidZones);
+            retryRoute = outRoutes[0] ?? null;
+          }
+          if (retryRoute && retryRoute.duration / 60 <= maxAcceptableMinutes) {
+            oneWayRoute = retryRoute;
+            waypoint = closerWp;
+            routeMinutes = retryRoute.duration / 60;
+          }
+        } catch {
+          /* fall through to error */
+        }
+
+        // If still too long, just return it anyway with a note — never error on mood_only
+        if (oneWayRoute) {
+          routeMinutes = oneWayRoute.duration / 60;
+        }
       }
       if (
         (oneWayRoute.duration > FRONTEND_MAX_DURATION_MIN * 60 ||
           oneWayRoute.distance > FRONTEND_MAX_DISTANCE_M) &&
         !isSurprise
       ) {
-        return NextResponse.json(
-          { error: "Couldn't find a route that fits your time. Try a longer duration." },
-          { status: 400 }
+        console.warn(
+          "[route] mood_only route exceeds frontend limits, returning anyway:",
+          { durationMin: oneWayRoute.duration / 60, distanceM: oneWayRoute.distance }
         );
       }
       const { score, breakdown, tags } = scoreRoute(oneWayRoute.coordinates, intent, index);

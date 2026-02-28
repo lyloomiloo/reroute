@@ -522,7 +522,15 @@ export default function MapViewClient({
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
   const [showRecenter, setShowRecenter] = useState(false);
   const [seenPoiKeys, setSeenPoiKeys] = useState<Set<string>>(() => new Set());
-  const [toastPoi, setToastPoi] = useState<{ name: string; description?: string; placeId?: string; photoRef?: string | null; photo_url?: string | null; type?: string } | null>(null);
+  const [toastPoi, setToastPoi] = useState<{
+    name: string;
+    description?: string;
+    placeId?: string;
+    photoRef?: string | null;
+    photo_url?: string | null;
+    photo_urls?: string[] | null;
+    type?: string;
+  } | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [selectedHighlight, setSelectedHighlight] = useState<RouteHighlight | null>(null);
@@ -674,53 +682,82 @@ export default function MapViewClient({
         toastPoi &&
         createPortal(
           <div
-            className="fixed bottom-4 left-4 right-4 bg-white rounded-lg shadow-lg overflow-hidden animate-slide-up"
-            style={{ boxShadow: "0 4px 20px rgba(0,0,0,0.15)", zIndex: 150 }}
+            className="fixed left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] max-w-sm bg-white rounded-lg shadow-lg overflow-hidden animate-slide-up"
+            style={{
+              bottom: "12rem",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+              zIndex: 150,
+            }}
             role="status"
             aria-live="polite"
           >
-            {(toastPoi.photo_url || toastPoi.placeId) ? (
-              toastPoi.photo_url ? (
-                <img
-                  src={toastPoi.photo_url}
-                  alt={toastPoi.name}
-                  className="w-full h-28 object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              ) : toastPoi.placeId ? (
-                <img
-                  src={`/api/place-photo?name=places/${encodeURIComponent(toastPoi.placeId)}/photos/default`}
-                  alt={toastPoi.name}
-                  className="w-full h-28 object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              ) : null
-            ) : null}
-            <div className="p-3 flex items-start gap-3">
-              <div className="flex-1 min-w-0">
-                <p className="font-mono font-bold text-sm truncate text-gray-900">{toastPoi.name}</p>
-                {toastPoi.description ? (
-                  <p className="font-mono text-sm text-gray-500 line-clamp-2 mt-0.5">{toastPoi.description}</p>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setToastPoi(null);
-                  if (toastTimeoutRef.current) {
-                    clearTimeout(toastTimeoutRef.current);
-                    toastTimeoutRef.current = null;
-                  }
-                }}
-                className="font-mono text-gray-400 hover:text-gray-600 text-sm flex-shrink-0"
-                aria-label="Dismiss"
-              >
-                ✕
-              </button>
+            <button
+              type="button"
+              onClick={() => {
+                setToastPoi(null);
+                if (toastTimeoutRef.current) {
+                  clearTimeout(toastTimeoutRef.current);
+                  toastTimeoutRef.current = null;
+                }
+              }}
+              className="absolute right-2 top-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-black/10 hover:bg-black/20 font-mono text-gray-600 hover:text-gray-900 text-sm"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+            {(() => {
+              const photoUrls =
+                toastPoi.photo_urls?.length > 0
+                  ? toastPoi.photo_urls
+                  : toastPoi.photo_url
+                    ? [toastPoi.photo_url]
+                    : toastPoi.placeId
+                      ? [`/api/place-photo?name=places/${encodeURIComponent(toastPoi.placeId)}/photos/default`]
+                      : [];
+              const hasPhoto = photoUrls.length > 0;
+              if (!hasPhoto) return null;
+              if (photoUrls.length > 1) {
+                return (
+                  <div className="w-full h-[120px] overflow-hidden rounded-t-lg flex-shrink-0 bg-gray-100">
+                    <div
+                      className="flex overflow-x-auto h-full scrollbar-hide snap-x snap-mandatory w-full"
+                      style={{ WebkitOverflowScrolling: "touch" }}
+                    >
+                      {photoUrls.map((url, j) => (
+                        <img
+                          key={j}
+                          src={url}
+                          alt=""
+                          className="w-full h-full flex-shrink-0 object-cover snap-start min-w-[200px]"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = "none";
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div className="w-full h-[120px] overflow-hidden rounded-t-lg flex-shrink-0 bg-gray-100">
+                  <img
+                    src={photoUrls[0]}
+                    alt={toastPoi.name}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                </div>
+              );
+            })()}
+            <div
+              className={`p-3 relative ${toastPoi.photo_url || toastPoi.photo_urls?.length || toastPoi.placeId ? "pt-2" : "pt-10"}`}
+            >
+              <p className="font-mono font-bold text-sm text-gray-900 pr-8">{toastPoi.name}</p>
+              {toastPoi.description ? (
+                <p className="font-mono text-xs text-gray-500 mt-1 line-clamp-3">{toastPoi.description}</p>
+              ) : null}
             </div>
           </div>,
           document.body
@@ -887,10 +924,12 @@ export default function MapViewClient({
                 eventHandlers={{
                   click: (e) => {
                     L.DomEvent.stopPropagation(e);
+                    const poiWithUrls = poi as { photo_url?: string | null; photo_urls?: string[] | null };
                     setToastPoi({
                       name: (poi.name ?? "").trim(),
                       description: poi.description ?? undefined,
-                      photo_url: poi.photo_url ?? undefined,
+                      photo_url: poiWithUrls.photo_url ?? undefined,
+                      photo_urls: poiWithUrls.photo_urls ?? undefined,
                       type: poi.type,
                     });
                   },
