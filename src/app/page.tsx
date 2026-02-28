@@ -255,10 +255,18 @@ function PageContent() {
           setShowQuick(false);
         } else {
           clearTimeout(timeout);
+          const options = Array.isArray(durationResult.options) && durationResult.options.length > 0
+            ? durationResult.options
+            : [
+                { label: "5 – 15 min", value: 10 },
+                { label: "15 – 45 min", value: 30 },
+                { label: "30 min – 1.5 hrs", value: 60 },
+                { label: "Surprise me", value: 0 },
+              ];
           setDurationPrompt({
-            intent: result.intent,
-            message: result.message,
-            options: result.options,
+            intent: durationResult.intent ?? "calm",
+            message: durationResult.message ?? "How long do you want to walk?",
+            options,
           });
           setRoutes(null);
           clearDestinationInfo();

@@ -2860,12 +2860,15 @@ export async function POST(req: NextRequest) {
       pattern === "mood_only" && targetDistanceKm != null && targetDistanceKm > 0
         ? (targetDistanceKm * 1000) / WALK_SPEED_M_PER_MIN
         : null;
+    // Only use LLM suggested_duration when the user's text explicitly mentions a duration (e.g. "30 min", "1 hour") — otherwise show the picker for "calm walk", "I need fresh air", etc.
+    const userTextHasExplicitDuration = /\d+\s*(?:min|minute|mins?|hr|hour|h\b)/i.test(String(moodText ?? "").trim());
+    const effectiveSuggestedDuration = userTextHasExplicitDuration ? suggestedDuration : null;
     let effectiveDuration =
       isSurpriseMe
         ? 25 + Math.floor(Math.random() * 21)
-        : durationFromBody ?? suggestedDuration ?? durationFromDistance;
-    if (suggestedDuration != null && effectiveDuration == null) {
-      effectiveDuration = suggestedDuration;
+        : durationFromBody ?? effectiveSuggestedDuration ?? durationFromDistance;
+    if (effectiveSuggestedDuration != null && effectiveDuration == null) {
+      effectiveDuration = effectiveSuggestedDuration;
     }
 
     // When no destination / mood_only / mood_and_area / themed_walk: ask for duration unless we already have one (from body, LLM suggested_duration, or distance). Do NOT default effectiveDuration here — that would skip the picker.
