@@ -599,10 +599,7 @@ function PageContent() {
           {toastMessage}
         </div>
       )}
-      <div
-        className={`h-[100dvh] flex flex-col ${!isNavigating ? "pb-[180px]" : ""}`}
-        style={!isNavigating ? { background: "linear-gradient(to top, #ffffff 180px, #f0f0f0 180px)" } : undefined}
-      >
+      <div className="h-[100dvh] flex flex-col bg-[#f0f0f0]">
         <>
           {/* Edge-case centered modal */}
           {edgeCaseMessage && (
@@ -971,8 +968,6 @@ function PageContent() {
                     moodInputClickedRef.current = true;
                   }}
                   onFocus={(e) => {
-                    document.body.style.position = "fixed";
-                    document.body.style.width = "100%";
                     setInputFocused(true);
                     setMoodInputFocused(true);
                     if (moodInputClickedRef.current) {
@@ -989,8 +984,6 @@ function PageContent() {
                     }, 300);
                   }}
                   onBlur={() => {
-                    document.body.style.position = "";
-                    document.body.style.width = "";
                     window.scrollTo(0, 0);
                     setMoodInputFocused(false);
                     setTimeout(() => setInputFocused(false), 200);
@@ -1088,14 +1081,8 @@ function PageContent() {
                       className="flex-1 min-w-[120px] bg-transparent border-0 border-b border-[#4A90D9]/80 py-1 pr-1 text-xs text-[#4A90D9]/80 placeholder:text-[#4A90D9]/70 focus:outline-none focus:border-[#4A90D9] font-mono"
                       value={startPointInput}
                       onChange={(e) => setStartPointInput(e.target.value)}
-                      onFocus={() => {
-                        document.body.style.position = "fixed";
-                        document.body.style.width = "100%";
-                        setStartInputFocused(true);
-                      }}
+                      onFocus={() => setStartInputFocused(true)}
                       onBlur={() => {
-                        document.body.style.position = "";
-                        document.body.style.width = "";
                         window.scrollTo(0, 0);
                         setTimeout(() => setStartInputFocused(false), 200);
                       }}
