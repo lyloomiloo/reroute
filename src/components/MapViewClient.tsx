@@ -378,6 +378,8 @@ interface MapViewClientProps {
   onArrived?: () => void;
   /** When true (loop routes), arrival is only triggered after traveling at least 70% of the route. */
   isLoopRoute?: boolean;
+  /** Called when the user's GPS position updates (for proximity checks, e.g. before starting navigation). */
+  onUserPositionChange?: (lat: number, lng: number) => void;
 }
 
 export default function MapViewClient({
@@ -403,6 +405,7 @@ export default function MapViewClient({
   onRemainingUpdate,
   onArrived,
   isLoopRoute = false,
+  onUserPositionChange,
 }: MapViewClientProps) {
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -518,6 +521,7 @@ export default function MapViewClient({
             lng: longitude,
             heading: typeof heading === "number" && Number.isFinite(heading) ? heading : undefined,
           });
+          onUserPositionChange?.(latitude, longitude);
         }
       };
       const onError = (error: GeolocationPositionError) => {

@@ -71,6 +71,17 @@ function formatDistance(meters: number): string {
   return `${km % 1 === 0 ? km : km.toFixed(1)} km`;
 }
 
+/** Distance in meters between two points (Haversine). */
+function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function PageContent() {
   const [mapCenter, setMapCenter] = useState<[number, number] | null>(null);
   const [moodInput, setMoodInput] = useState("");
@@ -117,6 +128,11 @@ function PageContent() {
   const [remainingDistance, setRemainingDistance] = useState<string>("—");
   const [remainingTime, setRemainingTime] = useState<string>("—");
   const [hasArrived, setHasArrived] = useState(false);
+  /** Dev/QA: force night mode for testing (Raval avoid, safe corridors) without changing time. */
+  const [nightModeOverride, setNightModeOverride] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userPositionRef = useRef<{ lat: number; lng: number } | null>(null);
   const moodInputRef = useRef<HTMLInputElement | null>(null);
 
   const ROUTE_TIMEOUT_MS = 30000;
@@ -130,6 +146,15 @@ function PageContent() {
   useEffect(() => {
     const blink = setInterval(() => setColonVisible((v) => !v), 500);
     return () => clearInterval(blink);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = null;
+      }
+    };
   }, []);
 
   /** Theme names for which we show "SURPRISE ME" in the edge-case popup. */
@@ -203,7 +228,7 @@ function PageContent() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ROUTE_TIMEOUT_MS);
     try {
-      const result = await getRoute(origin, text, { signal: controller.signal });
+      const result = await getRoute(origin, text, { signal: controller.signal, forceNightMode: nightModeOverride });
       if (isEdgeCaseResponse(result)) {
         clearTimeout(timeout);
         setEdgeCaseMessage(result.message);
@@ -216,7 +241,7 @@ function PageContent() {
         if (durationResult.skip_duration) {
           const duration =
             durationResult.auto_duration ?? [10, 20, 40][Math.floor(Math.random() * 3)];
-          const routeResult = await getRouteWithDuration(origin, text, duration, { signal: controller.signal });
+          const routeResult = await getRouteWithDuration(origin, text, duration, { signal: controller.signal, forceNightMode: nightModeOverride });
           clearTimeout(timeout);
           setRoutes(routeResult as RoutesResponse);
           setLastRouteMoodText(text);
@@ -304,7 +329,7 @@ function PageContent() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ROUTE_TIMEOUT_MS);
     try {
-      const result = await getRoute(origin, lastRouteMoodText, { signal: controller.signal });
+      const result = await getRoute(origin, lastRouteMoodText, { signal: controller.signal, forceNightMode: nightModeOverride });
       clearTimeout(timeout);
       if (isEdgeCaseResponse(result) || isDurationPrompt(result) || isPlaceOptionsResponse(result)) return;
       setRoutes(result as RoutesResponse);
@@ -325,7 +350,7 @@ function PageContent() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ROUTE_TIMEOUT_MS);
     try {
-      const result = await getRouteWithDuration(origin, moodInput, minutes, { signal: controller.signal });
+      const result = await getRouteWithDuration(origin, moodInput, minutes, { signal: controller.signal, forceNightMode: nightModeOverride });
       console.log(
         "[frontend] highlights received:",
         JSON.stringify(
@@ -472,6 +497,7 @@ function PageContent() {
         destination_address: place.description ?? undefined,
         destination_place_type: place.primary_type ?? undefined,
         signal: controller.signal,
+        forceNightMode: nightModeOverride,
       });
       clearTimeout(timeout);
       const destHighlight = result.recommended?.highlights?.find((h) => h.type === "destination");
@@ -517,6 +543,24 @@ function PageContent() {
               timeZone: "Europe/Madrid",
             }).replace(":", colonVisible ? ":" : " ")}
           </span>
+        </div>
+      )}
+      {/* Dev/QA: night mode toggle — remove or hide behind feature flag for production */}
+      <button
+        type="button"
+        onClick={() => setNightModeOverride((v) => !v)}
+        className="fixed top-2 right-2 z-50 bg-black/80 text-white text-[10px] px-2 py-1 rounded font-mono"
+        aria-label={nightModeOverride ? "Switch to day mode" : "Switch to night mode"}
+      >
+        {nightModeOverride ? "🌙 NIGHT" : "☀️ DAY"}
+      </button>
+      {toastMessage && (
+        <div
+          className="fixed bottom-24 left-4 right-4 z-[60] bg-black text-white font-mono text-sm text-center py-3 px-4 rounded-lg shadow-lg"
+          role="alert"
+          aria-live="polite"
+        >
+          {toastMessage}
         </div>
       )}
       <div className="h-[100dvh] flex flex-col bg-[#f0f0f0]">
@@ -620,6 +664,9 @@ function PageContent() {
               }}
               onArrived={() => setHasArrived(true)}
               isLoopRoute={routes?.isLoop ?? false}
+              onUserPositionChange={(lat, lng) => {
+                userPositionRef.current = { lat, lng };
+              }}
             />
             {hasArrived && (
               <div className="absolute inset-0 z-[2000] bg-white flex flex-col items-center justify-center px-6 text-center">
@@ -735,10 +782,28 @@ function PageContent() {
                             type="button"
                             onClick={() => {
                             const active = showQuick && routes?.quick ? routes.quick : routes?.recommended;
-                            if (active) {
-                              setRemainingDistance(formatDistance(active.distance));
-                              setRemainingTime(formatDuration(active.duration));
+                            if (!active) return;
+                            const routeCoords = active.coordinates;
+                            if (customStart && routeCoords?.length > 0) {
+                              const up = userPositionRef.current;
+                              if (up) {
+                                const routeStart = routeCoords[0] as [number, number];
+                                const routeStartLat = routeStart[1];
+                                const routeStartLng = routeStart[0];
+                                const distanceToStart = getDistanceMeters(up.lat, up.lng, routeStartLat, routeStartLng);
+                                if (distanceToStart > 500) {
+                                  setToastMessage("You're too far from the start point. Get closer to start navigating.");
+                                  if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+                                  toastTimeoutRef.current = setTimeout(() => {
+                                    setToastMessage(null);
+                                    toastTimeoutRef.current = null;
+                                  }, 4000);
+                                  return;
+                                }
+                              }
                             }
+                            setRemainingDistance(formatDistance(active.distance));
+                            setRemainingTime(formatDuration(active.duration));
                             setHasArrived(false);
                             setIsNavigating(true);
                           }}

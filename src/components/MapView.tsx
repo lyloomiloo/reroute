@@ -41,6 +41,8 @@ interface MapViewProps {
   onArrived?: () => void;
   /** When true (loop routes), arrival is only triggered after traveling at least 70% of the route. */
   isLoopRoute?: boolean;
+  /** Called when the user's GPS position updates (for proximity checks). */
+  onUserPositionChange?: (lat: number, lng: number) => void;
 }
 
 export default function MapView({
@@ -66,6 +68,7 @@ export default function MapView({
   onRemainingUpdate,
   onArrived,
   isLoopRoute = false,
+  onUserPositionChange,
 }: MapViewProps) {
   return (
     <div className="absolute inset-0" style={{ zIndex: 1 }}>
@@ -92,6 +95,7 @@ export default function MapView({
         onRemainingUpdate={onRemainingUpdate}
         onArrived={onArrived}
         isLoopRoute={isLoopRoute}
+        onUserPositionChange={onUserPositionChange}
       />
     </div>
   );
