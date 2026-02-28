@@ -8,8 +8,6 @@ import {
   getRoute,
   getRouteWithDuration,
   getRouteWithDestination,
-  getInitialBearing,
-  bearingToDirection,
   type RoutesResponse,
   type RouteHighlight,
   type PlaceOption,
@@ -601,7 +599,7 @@ function PageContent() {
           {toastMessage}
         </div>
       )}
-      <div className="h-[100dvh] flex flex-col bg-[#f0f0f0]">
+      <div className={`h-[100dvh] flex flex-col bg-[#f0f0f0] ${!isNavigating ? "pb-[220px]" : ""}`}>
         <>
           {/* Edge-case centered modal */}
           {edgeCaseMessage && (
@@ -813,11 +811,6 @@ function PageContent() {
                         <p className="font-mono text-xs text-gray-400">
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
                         </p>
-                        {routes.isLoop && active.coordinates?.length >= 2 && (
-                          <p className="font-mono text-sm text-gray-400 mt-1">
-                            Head {bearingToDirection(getInitialBearing(active.coordinates))} · loops back here
-                          </p>
-                        )}
                         <p className="font-mono text-[9px] text-[#4A90D9] mt-2">
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
@@ -949,9 +942,9 @@ function PageContent() {
             )}
           </div>
 
-          {/* BOTTOM: Input section — hidden during navigation */}
+          {/* BOTTOM: Input section — hidden during navigation; fixed for iOS keyboard */}
           {!isNavigating && (
-          <div className="flex-shrink-0 z-10 bg-white px-3 pt-3 pb-[env(safe-area-inset-bottom)] border-t border-gray-100">
+          <div className="fixed bottom-0 left-0 right-0 z-10 bg-white px-3 pt-3 border-t border-gray-100 ios-search-bar" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
             {/* Headline: hidden when section is fixed at top (any input focused) */}
             <div
               className={`overflow-hidden transition-all duration-200 ${
@@ -975,6 +968,8 @@ function PageContent() {
                     moodInputClickedRef.current = true;
                   }}
                   onFocus={(e) => {
+                    document.body.style.position = "fixed";
+                    document.body.style.width = "100%";
                     setInputFocused(true);
                     setMoodInputFocused(true);
                     if (moodInputClickedRef.current) {
@@ -991,9 +986,11 @@ function PageContent() {
                     }, 300);
                   }}
                   onBlur={() => {
+                    document.body.style.position = "";
+                    document.body.style.width = "";
+                    window.scrollTo(0, 0);
                     setMoodInputFocused(false);
                     setTimeout(() => setInputFocused(false), 200);
-                    window.scrollTo(0, 0);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -1088,8 +1085,17 @@ function PageContent() {
                       className="flex-1 min-w-[120px] bg-transparent border-0 border-b border-[#4A90D9]/80 py-1 pr-1 text-xs text-[#4A90D9]/80 placeholder:text-[#4A90D9]/70 focus:outline-none focus:border-[#4A90D9] font-mono"
                       value={startPointInput}
                       onChange={(e) => setStartPointInput(e.target.value)}
-                      onFocus={() => setStartInputFocused(true)}
-                      onBlur={() => setTimeout(() => setStartInputFocused(false), 200)}
+                      onFocus={() => {
+                        document.body.style.position = "fixed";
+                        document.body.style.width = "100%";
+                        setStartInputFocused(true);
+                      }}
+                      onBlur={() => {
+                        document.body.style.position = "";
+                        document.body.style.width = "";
+                        window.scrollTo(0, 0);
+                        setTimeout(() => setStartInputFocused(false), 200);
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleSetStartPoint();
                         if (e.key === "Escape") setStartPointExpanded(false);

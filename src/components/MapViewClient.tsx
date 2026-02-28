@@ -6,6 +6,7 @@ import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, CircleMarker
 import L from "leaflet";
 import type { LatLngExpression } from "leaflet";
 import type { RouteHighlight, PlaceOption, RoutePreviewPoi } from "@/lib/routing";
+import { getInitialBearing } from "@/lib/routing";
 import {
   GEOLOCATION_OPTIONS,
   handleGeolocationError,
@@ -495,7 +496,6 @@ export default function MapViewClient({
   const [locationError, setLocationError] = useState<string | null>(null);
   const [selectedHighlight, setSelectedHighlight] = useState<RouteHighlight | null>(null);
   const placeOptionMarkerRefs = useRef<(L.Marker | null)[]>([]);
-  const mainRoutePolyRef = useRef<L.Polyline | null>(null);
 
   useEffect(() => {
     if (!placeOptions?.length || placeOptionsFocusedIndex == null) return;
@@ -550,26 +550,6 @@ export default function MapViewClient({
       onArrived();
     }
   }, [isNavigating, userPosition?.lat, userPosition?.lng, routeCoordinates, onRemainingUpdate, onArrived, isLoopRoute]);
-
-  // Animated flowing dashes on loop route (preview only): add class to path so CSS can run stroke-dashoffset animation
-  useEffect(() => {
-    if (!isLoopRoute || isNavigating || !routeCoordinates?.length) return;
-    const getPath = (): SVGPathElement | null => {
-      const r = mainRoutePolyRef.current as (L.Polyline & { _path?: SVGPathElement }) | { leafletElement?: L.Polyline & { _path?: SVGPathElement } } | null;
-      if (!r) return null;
-      const layer = "leafletElement" in r && r.leafletElement ? r.leafletElement : (r as L.Polyline & { _path?: SVGPathElement });
-      return (layer as L.Polyline & { _path?: SVGPathElement })._path ?? null;
-    };
-    const t = setTimeout(() => {
-      const path = getPath();
-      if (path) path.classList.add("route-flow");
-    }, 0);
-    return () => {
-      clearTimeout(t);
-      const path = getPath();
-      if (path) path.classList.remove("route-flow");
-    };
-  }, [isLoopRoute, isNavigating, routeCoordinates]);
 
   // Proximity check: when user is within 50m of an unseen POI, show toast and mark seen
   useEffect(() => {
@@ -767,12 +747,10 @@ export default function MapViewClient({
               />
             ) : null}
             <Polyline
-              ref={mainRoutePolyRef}
               positions={routeCoordinates.map(([lng, lat]) => [lat, lng] as [number, number])}
               pathOptions={{
                 ...(ROUTE_INTENT_COLORS[routeIntent ?? ""] ?? DEFAULT_ROUTE_COLOR),
                 weight: isNavigating ? 5 : 4,
-                ...(isLoopRoute && !isNavigating && { dashArray: "12 8" }),
               }}
             />
           </>
@@ -808,45 +786,73 @@ export default function MapViewClient({
                 )}
               </Marker>
             )}
+            {isLoopRoute && routeCoordinates.length >= 2 && !isNavigating && (() => {
+              const idx = Math.floor(routeCoordinates.length * 0.15);
+              const segment = routeCoordinates.slice(
+                Math.max(0, idx - 2),
+                Math.min(routeCoordinates.length, idx + 3)
+              );
+              const bearing = segment.length >= 2 ? getInitialBearing(segment) : 0;
+              const routeColor = (ROUTE_INTENT_COLORS[routeIntent ?? ""] ?? DEFAULT_ROUTE_COLOR).color;
+              return (
+                <Marker
+                  position={[routeCoordinates[idx][1], routeCoordinates[idx][0]]}
+                  icon={L.divIcon({
+                    className: "",
+                    html: `<div style="transform: rotate(${bearing}deg); color: ${routeColor}; font-size: 10px; line-height: 1; pointer-events: none;">▶</div>`,
+                    iconSize: [10, 10],
+                    iconAnchor: [5, 5],
+                  })}
+                  zIndexOffset={55}
+                />
+              );
+            })()}
           </>
         )}
-        {highlights?.map((h, i) => (
-          <Marker
-            key={i}
-            position={[h.lat, h.lng]}
-            icon={
-              isNavigating
-                ? seenPoiKeys.has(poiKey(h.lat, h.lng))
-                  ? NAV_POI_SEEN_ICON
-                  : NAV_POI_ICON
-                : h.type === "destination"
-                  ? END_POINT_ICON
-                  : POI_DOT_ICON
-            }
-            eventHandlers={
-              isNavigating
-                ? {
-                    click: (e) => {
-                      L.DomEvent.stopPropagation(e);
-                      setToastPoi({
-                        name: h.name ?? h.label ?? "",
-                        description: h.description,
-                        placeId: (h as RouteHighlight).placeId,
-                        photoRef: (h as RouteHighlight).photoRef,
-                        photo_url: (h as RouteHighlight).photo_url ?? undefined,
-                        type: h.type,
-                      });
-                    },
-                  }
-                : {
-                    click: (e) => {
-                      L.DomEvent.stopPropagation(e);
-                      setSelectedHighlight(h);
-                    },
-                  }
-            }
-          />
-        ))}
+        {(() => {
+          const showPoiInPreview = ["discover", "scenic", "lively", "cafe"].includes(routeIntent ?? "");
+          const visibleHighlights =
+            isNavigating || showPoiInPreview ? (highlights ?? []) : [];
+          return visibleHighlights.map((h, i) => {
+            const isDestination = h.type === "destination";
+            const isPoiSeen = isNavigating && seenPoiKeys.has(poiKey(h.lat, h.lng));
+            const useLabelStyle = !isNavigating && showPoiInPreview && !isDestination;
+            const icon = isNavigating
+              ? isPoiSeen
+                ? NAV_POI_SEEN_ICON
+                : NAV_POI_ICON
+              : isDestination
+                ? END_POINT_ICON
+                : useLabelStyle
+                  ? L.divIcon({
+                      className: "",
+                      html: `<div style="background: white; border: 1px solid black; padding: 2px 6px; font-family: monospace; font-size: 11px; white-space: nowrap; border-radius: 2px;">${(h.name ?? h.label ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")}</div>`,
+                      iconAnchor: [0, 0],
+                    })
+                  : POI_DOT_ICON;
+            return (
+              <Marker
+                key={i}
+                position={[h.lat, h.lng]}
+                icon={icon}
+                zIndexOffset={useLabelStyle ? 45 : undefined}
+                eventHandlers={{
+                  click: (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    setToastPoi({
+                      name: h.name ?? h.label ?? "",
+                      description: h.description,
+                      placeId: (h as RouteHighlight).placeId,
+                      photoRef: (h as RouteHighlight).photoRef,
+                      photo_url: (h as RouteHighlight).photo_url ?? undefined,
+                      type: h.type,
+                    });
+                  },
+                }}
+              />
+            );
+          });
+        })()}
         {previewPois && previewPois.length > 0 && !isNavigating &&
           previewPois.map((poi, i) => {
             const safeName = poi.name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -888,7 +894,11 @@ export default function MapViewClient({
         {showUserLocation && userPosition && (
           <Marker
             position={[userPosition.lat, userPosition.lng]}
-            icon={isNavigating ? getNavigationArrowIcon(userPosition.heading ?? 0) : USER_LOCATION_ICON}
+            icon={
+              isNavigating && !isLoopRoute
+                ? getNavigationArrowIcon(userPosition.heading ?? 0)
+                : USER_LOCATION_ICON
+            }
             zIndexOffset={-100}
           />
         )}

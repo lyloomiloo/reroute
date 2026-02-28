@@ -863,6 +863,14 @@ function waypointFromBearing(
   return [waypointLat, waypointLng];
 }
 
+/** Clamp [lat, lng] to BCN_BBOX_RANDOM so random waypoints stay within Barcelona. */
+function clampWaypointToBarcelona(wp: [number, number]): [number, number] {
+  return [
+    Math.max(BCN_BBOX_RANDOM.minLat, Math.min(BCN_BBOX_RANDOM.maxLat, wp[0])),
+    Math.max(BCN_BBOX_RANDOM.minLng, Math.min(BCN_BBOX_RANDOM.maxLng, wp[1])),
+  ];
+}
+
 /** Point ~offsetM meters perpendicular to the line from (fromLat,fromLng) to (toLat,toLng). Used so the return leg takes different streets. */
 function offsetPerpendicular(
   fromLat: number,
@@ -1118,8 +1126,8 @@ IMPORTANT CLASSIFICATION RULES:
 - Only classify as mood_and_poi if the user names a SPECIFIC type of place to go TO: 'coffee shop', 'asian food', 'bookstore', 'museum' → mood_and_poi
 - 'restaurant' IS a place type. "Something active outdoors", "hike", "trail", "workout walk" get mood_and_poi with outdoor poi_query so the user gets a destination first (not duration picker).
 - 'show me something I've never seen' is mood_only, not mood_and_poi.
-- 'surprise me' is mood_only.
-- "get lost", "get lost for a bit", "lose myself", "wander", "no plan", "just walk", "I want to get lost" → mood_only, intent discover, is_surprise: true, skip_duration: true. Treat as randomised/surprise walk; the app will pick a random direction and destination.
+- RANDOM / SURPRISE: "surprise me", "get lost", "I want to get lost", "get lost for a bit", "lose myself", "wander", "no plan", "just walk" → pattern mood_only, intent discover, is_surprise: true, skip_duration: true. You MUST set both is_surprise and skip_duration so the app treats these as random-direction routes (no duration picker, server picks ~25 min). Never use a different pattern for these phrases.
+- 'surprise me' is mood_only with is_surprise: true, skip_duration: true.
 
 - KEY: Does the user name a SPECIFIC PLACE (e.g. Sagrada Familia, Gràcia, Barceloneta) or just a VIBE/THEME (e.g. "architecture", "scenic", "calm by the beach")? If it's a vibe or theme with NO named place → mood_only (we will ask for duration). If they name a specific place or area → has destination (mood_and_destination or mood_and_area).
 - Open-ended vibe/theme with no specific destination → mood_only: "scenic walk", "peaceful stroll", "pretty route" = mood_only (no POI, no destination; we ask duration). Exception: "architecture hunt", "architecture walk", "see cool buildings" → themed_walk (see architecture rule below).
@@ -1950,7 +1958,11 @@ async function enrichHighlightsWithPhotos(
 
 function stripSummaryQuotes(s: string | null | undefined): string {
   if (s == null || typeof s !== "string") return "";
-  return s.replace(/^['"]|['"]$/g, "").trim();
+  return s
+    .replace(/^["']|["']$/g, "")
+    .replace(/\\"/g, '"')
+    .replace(/\\'/g, "'")
+    .trim();
 }
 
 function softenSummaryForEmotionalSupport(summary: string | null | undefined): string {
@@ -1962,6 +1974,13 @@ function softenSummaryForEmotionalSupport(summary: string | null | undefined): s
   return softened || "A quiet, peaceful walk";
 }
 
+/** Enforce max 6 words and strip trailing period/quotes from description. */
+function normalizeRouteLabel(s: string): string {
+  const t = stripSummaryQuotes(s).replace(/\.+$/, "").trim();
+  const words = t.split(/\s+/).filter(Boolean).slice(0, 6);
+  return words.join(" ");
+}
+
 async function generateDescription(
   intent: string,
   breakdown: { noise: number; green: number; clean: number; cultural: number },
@@ -1969,36 +1988,168 @@ async function generateDescription(
   distance: number,
   destinationName?: string | null,
   nightMode?: boolean,
-  discoveryRouteOptions?: { highlightTypesOrNames?: string[] }
+  discoveryRouteOptions?: {
+    neighborhood?: string | null;
+  },
+  loopRouteOptions?: { areaName?: string | null },
+  surpriseRouteOptions?: { startNeighborhood?: string; compassDirection?: string },
+  groundedRouteData?: {
+    routeNeighborhoods: string[];
+    compassDirection?: string;
+    isLoop: boolean;
+    destinationName?: string | null;
+  }
 ): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not set");
 
+  // Grounded in actual route data: neighborhoods from sampled route points only
+  if (groundedRouteData && groundedRouteData.routeNeighborhoods.length > 0) {
+    const { routeNeighborhoods, compassDirection, isLoop, destinationName: destName } = groundedRouteData;
+    const neighborhoodList = routeNeighborhoods.join(", ");
+    let userMessage = `This route passes through: ${neighborhoodList}.`;
+    if (compassDirection) userMessage += ` Heading: ${compassDirection}.`;
+    userMessage += ` ${isLoop ? "Loop route." : "One-way route."}`;
+    if (destName) userMessage += ` Destination: ${destName}.`;
+    userMessage += ` Generate a 3-6 word route label. ONLY reference the neighborhoods provided. Do NOT invent or guess locations. No flowery adjectives. Do NOT wrap your reply in quotes.`;
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        max_tokens: 25,
+        temperature: 0.3,
+        messages: [
+          {
+            role: "system",
+            content: `Given the neighborhoods a route actually passes through and its direction, generate a 3-6 word route label. ONLY reference the neighborhoods provided. Do NOT invent or guess locations. Use plain language, no flowery adjectives. Max 6 words. Do NOT wrap the output in quotes or add a period.`,
+          },
+          { role: "user", content: userMessage },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`OpenAI error: ${res.status} ${err}`);
+    }
+    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
+    return raw ? normalizeRouteLabel(raw) : "";
+  }
+
+  const isLoopWithArea =
+    loopRouteOptions?.areaName &&
+    (intent === "calm" || intent === "nature" || intent === "exercise");
+  const isDiscoveryWithDestination =
+    (intent === "discover" || intent === "scenic" || intent === "lively") && !!destinationName;
+
+  // Surprise me / random / get lost: short vibe sentence, no place names
+  if (surpriseRouteOptions) {
+    const { startNeighborhood = "Barcelona", compassDirection } = surpriseRouteOptions;
+    let userMessage = `Walking vibe: ${intent}. Start area: ${startNeighborhood}.`;
+    if (compassDirection) userMessage += ` General direction: ${compassDirection}.`;
+    userMessage += ` Write ONE short sentence (under 12 words). Lowercase. Describe the feel of the walk and general direction/area only. Do NOT list any place names or POIs. Examples: "a wander through the old town toward the waterfront", "heading east through quiet backstreets", "an aimless stroll through Eixample's grid". Do NOT wrap your reply in quotes.`;
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        max_tokens: 45,
+        temperature: 0.6,
+        messages: [
+          {
+            role: "system",
+            content: `You write one short sentence (under 12 words) for a random/surprise walk in Barcelona. Use lowercase. Describe the vibe and general direction or area only. Do NOT list place names or POIs. Examples: "a wander through the old town toward the waterfront", "heading east through quiet backstreets". Do NOT wrap the output in quotes.`,
+          },
+          { role: "user", content: userMessage },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`OpenAI error: ${res.status} ${err}`);
+    }
+    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
+    return raw ? stripSummaryQuotes(raw) : "";
+  }
+
+  // Loop route: one short sentence referencing area and what makes it good for that mood
+  if (isLoopWithArea) {
+    const areaName = loopRouteOptions!.areaName!;
+    const userMessage = `Intent: ${intent}. Area: ${areaName}. Write ONE short sentence (under 12 words), lowercase. Reference the area and what makes it good for this mood. Do NOT list place names. Example: "a quiet loop through Eixample's tree-lined blocks." Do NOT wrap your reply in quotes.`;
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        max_tokens: 45,
+        temperature: 0.6,
+        messages: [
+          {
+            role: "system",
+            content: `You write one short sentence (under 12 words) for a walking loop in Barcelona. Lowercase. Reference the area and why it fits the mood (calm, nature, or exercise). Do NOT list place names. Examples: "a quiet loop through Eixample's tree-lined blocks", "a green loop around Montjuïc's park paths". Do NOT wrap the output in quotes.`,
+          },
+          { role: "user", content: userMessage },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`OpenAI error: ${res.status} ${err}`);
+    }
+    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
+    return raw ? stripSummaryQuotes(raw) : "";
+  }
+
+  // Discovery route to a destination: one short sentence, feel only — no POI names
+  if (isDiscoveryWithDestination) {
+    const neighborhood = discoveryRouteOptions?.neighborhood ?? "";
+    let userMessage = `Destination: ${destinationName}.`;
+    if (neighborhood) userMessage += ` Neighborhood: ${neighborhood}.`;
+    userMessage += ` Write ONE short sentence (under 12 words), lowercase. Describe the feel of the walk (e.g. narrow lanes, plaza, waterfront) and where it goes. Do NOT list place names or POIs. Example: "through the Gothic Quarter's narrow lanes to a hidden plaza café." Do NOT wrap your reply in quotes.`;
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        max_tokens: 45,
+        temperature: 0.6,
+        messages: [
+          {
+            role: "system",
+            content: `You write one short sentence (under 12 words) for a discovery walk in Barcelona that goes to a specific place. Use lowercase. Describe the feel of the walk (street character, vibe) and destination/area. Do NOT list place names or POIs. Example: "through the Gothic Quarter's narrow lanes to a hidden plaza café". Do NOT wrap the output in quotes.`,
+          },
+          { role: "user", content: userMessage },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`OpenAI error: ${res.status} ${err}`);
+    }
+    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
+    return raw ? stripSummaryQuotes(raw) : "";
+  }
+
+  // Default: tag-style description (tags only; no sentence, no place names)
   let userMessage = `Intent: ${intent}. Breakdown: noise=${breakdown.noise}, green=${breakdown.green}, clean=${breakdown.clean}, cultural=${breakdown.cultural}. Duration seconds: ${duration}. Distance meters: ${distance}.`;
   if (destinationName) userMessage += ` Destination: ${destinationName}.`;
   if (nightMode) userMessage += " Night mode: true — generating tags for an after-dark walk; route may be rerouted via well-lit corridors (e.g. La Rambla). Prefer tags like 'avoids poorly-lit areas' or 'busy, well-lit corridors'.";
-  if (discoveryRouteOptions?.highlightTypesOrNames?.length) {
-    userMessage += ` POIs/types along the route (mention 1-2): ${discoveryRouteOptions.highlightTypesOrNames.slice(0, 6).join(", ")}.`;
-  }
-
-  const isDiscoveryWithDestination =
-    (intent === "discover" || intent === "scenic" || intent === "lively") && !!destinationName;
-  const discoveryInstruction = isDiscoveryWithDestination
-    ? `
-
-DISCOVERY ROUTE WITH DESTINATION: This route goes to a specific place. Describe what the user will FIND, not just street qualities.
-- Include the destination name or area (e.g. "Towards the waterfront", "Heads to Gothic Quarter", "Towards Park Güell").
-- Mention 1-2 interesting things along the way (e.g. "passes hidden plazas", "street art", "local shops", "narrow medieval lanes", "neighbourhood cafes").
-- Do NOT give a generic list like "quiet streets · leafy streets · local streets" — say what makes this walk interesting and where it goes.
-
-Good examples:
-'Towards the waterfront · passes hidden plazas · local shops'
-'Heads to Gothic Quarter · street art · narrow medieval lanes'
-'Towards Park Güell · uphill climb · neighbourhood cafes'
-
-Bad (too generic):
-'Quiet streets · leafy streets · local streets'`
-    : "";
 
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -2013,7 +2164,7 @@ Bad (too generic):
       messages: [
         {
           role: "system",
-          content: `You generate short route tags for walking routes in Barcelona. Return 3-4 descriptive tags separated by ' · '. Each tag is 1-3 words max. Do NOT wrap the output in quotes — return only the tags (e.g. quiet streets · tree-lined · low traffic).
+          content: `You generate short route tags for walking routes in Barcelona. Return 3-4 descriptive tags separated by ' · '. Each tag is 1-3 words max. Do NOT wrap the output in quotes — return only the tags (e.g. quiet streets · tree-lined · low traffic). Do NOT list place names or POIs — describe the walking experience only.
 
 Tags should describe the walking EXPERIENCE, not tourist attractions. Use simple, concrete language like: 'well-lit streets', 'tree-lined paths', 'quiet residential streets', 'busy main roads', 'pedestrian zones', 'park paths', 'low noise', 'leafy streets'. Do NOT use promotional language like 'cultural highlights', 'historic lanes', 'cultural lanes', or 'garden paths' — prefer plain route descriptions.
 
@@ -2029,7 +2180,6 @@ Examples:
 'quiet streets · tree-lined · low traffic'
 'well-lit streets · busy main roads · direct route'
 'leafy stretch · pedestrian zones · low noise'
-${discoveryInstruction}
 
 If nightMode is true, you are generating for an after-dark walk (route may avoid Raval and use La Rambla / well-lit corridors). Include at least one safety-aware tag:
 - 'well-lit streets', 'main roads', 'busy corridors', 'avoids poorly-lit areas', or 'busy, well-lit corridors'
@@ -2055,7 +2205,8 @@ Respond with ONLY the tags, nothing else.`,
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
   const tags = raw ? raw.split(" · ").map((t) => t.trim()).filter(Boolean).slice(0, 3) : [];
-  return tags.join(" · ") || "";
+  const out = tags.join(" · ") || "";
+  return out ? stripSummaryQuotes(out) : "";
 }
 
 /** One batch LLM call to generate 6-10 word descriptions for places that only have a generic type. Optional searchQuery tailors descriptions to what the user is looking for (e.g. "laptop-friendly cafes" → focus on wifi/power outlets). */
@@ -2326,7 +2477,11 @@ function getExcludeHighlightTypes(destinationPlaceType: string | null | undefine
 // =============================================================
 
 const WALK_SPEED_M_PER_MIN = 67;
+/** Walking speed for duration→distance (loop/surprise): 80 m/min → 25 min ≈ 2 km round trip. */
+const ROUTE_DISTANCE_M_PER_MIN = 80;
 const BCN_BBOX = { minLat: 41.32, maxLat: 41.47, minLng: 2.05, maxLng: 2.23 };
+/** Bounds for random waypoint (surprise/get lost): keep within central Barcelona. */
+const BCN_BBOX_RANDOM = { minLat: 41.35, maxLat: 41.45, minLng: 2.1, maxLng: 2.23 };
 
 /** Hardcoded coords for destinations that geocode poorly (sea, wrong bbox) or have language variants. Check before geocodePlace. */
 const KNOWN_DESTINATION_FALLBACKS: Record<string, [number, number]> = {
@@ -2403,6 +2558,109 @@ function isOnLand(lat: number, lng: number): boolean {
 function getAreaBbox(areaName: string): { minLat: number; maxLat: number; minLng: number; maxLng: number } | null {
   const key = areaName.toLowerCase().trim().replace(/\s+/g, " ");
   return AREA_BBOXES[key] ?? null;
+}
+
+/** Bearing in degrees 0–360 from (lat1,lng1) to (lat2,lng2). */
+function getBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLng = toRad(lng2 - lng1);
+  const y = Math.sin(dLng) * Math.cos(toRad(lat2));
+  const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+  let bearing = (Math.atan2(y, x) * 180) / Math.PI;
+  if (bearing < 0) bearing += 360;
+  return bearing;
+}
+
+function bearingToCompass(bearingDeg: number): string {
+  const sectors = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
+  const idx = Math.round(((bearingDeg % 360) / 45)) % 8;
+  return sectors[idx] ?? "north";
+}
+
+/** Rough neighborhood name for a point in Barcelona (for vibe descriptions). */
+function getNeighborhoodForCoords(lat: number, lng: number): string {
+  const displayNames: Record<string, string> = {
+    eixample: "Eixample",
+    gràcia: "Gràcia",
+    gracia: "Gràcia",
+    barceloneta: "Barceloneta",
+    waterfront: "waterfront",
+    "barri gotic": "Barri Gòtic",
+    gothic: "Barri Gòtic",
+    raval: "El Raval",
+    montjuic: "Montjuïc",
+    montjuïc: "Montjuïc",
+    tibidabo: "Tibidabo",
+    collserola: "Collserola",
+  };
+  for (const [key, bbox] of Object.entries(AREA_BBOXES)) {
+    if (lat >= bbox.minLat && lat <= bbox.maxLat && lng >= bbox.minLng && lng <= bbox.maxLng) {
+      return displayNames[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
+    }
+  }
+  return "Barcelona";
+}
+
+/** Bounding boxes for route-based neighborhood lookup (description grounding). Order: more specific areas first. */
+const ROUTE_NEIGHBORHOOD_BBOXES: { name: string; minLat: number; maxLat: number; minLng: number; maxLng: number }[] = [
+  { name: "Ciutadella", minLat: 41.385, maxLat: 41.392, minLng: 2.183, maxLng: 2.192 },
+  { name: "Sagrada Família", minLat: 41.4, maxLat: 41.408, minLng: 2.168, maxLng: 2.178 },
+  { name: "Sant Pere", minLat: 41.385, maxLat: 41.39, minLng: 2.174, maxLng: 2.182 },
+  { name: "Gothic Quarter", minLat: 41.379, maxLat: 41.385, minLng: 2.173, maxLng: 2.18 },
+  { name: "El Born", minLat: 41.383, maxLat: 41.388, minLng: 2.18, maxLng: 2.186 },
+  { name: "Raval", minLat: 41.375, maxLat: 41.385, minLng: 2.165, maxLng: 2.173 },
+  { name: "Barceloneta", minLat: 41.375, maxLat: 41.382, minLng: 2.186, maxLng: 2.198 },
+  { name: "Poble Sec", minLat: 41.37, maxLat: 41.378, minLng: 2.155, maxLng: 2.172 },
+  { name: "Poblenou", minLat: 41.39, maxLat: 41.405, minLng: 2.192, maxLng: 2.21 },
+  { name: "Gràcia", minLat: 41.4, maxLat: 41.41, minLng: 2.148, maxLng: 2.17 },
+  { name: "Eixample", minLat: 41.385, maxLat: 41.4, minLng: 2.148, maxLng: 2.18 },
+  { name: "Montjuïc", minLat: 41.358, maxLat: 41.375, minLng: 2.148, maxLng: 2.17 },
+];
+
+/** Which neighborhood a single point (lat, lng) falls in for route descriptions. Returns "central Barcelona" if no bbox matches. */
+function getNeighborhoodAtPoint(lat: number, lng: number): string {
+  for (const b of ROUTE_NEIGHBORHOOD_BBOXES) {
+    if (lat >= b.minLat && lat <= b.maxLat && lng >= b.minLng && lng <= b.maxLng) return b.name;
+  }
+  return "central Barcelona";
+}
+
+/** Sample start, midpoint, end of route and return deduped neighborhood names. Coords are [lng, lat][] (GeoJSON). */
+function getRouteNeighborhoods(coords: [number, number][]): string[] {
+  if (!coords?.length) return [];
+  const len = coords.length;
+  const start = coords[0];
+  const mid = coords[Math.floor(len / 2)];
+  const end = coords[len - 1];
+  const n1 = getNeighborhoodAtPoint(start[1], start[0]);
+  const n2 = getNeighborhoodAtPoint(mid[1], mid[0]);
+  const n3 = getNeighborhoodAtPoint(end[1], end[0]);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const n of [n1, n2, n3]) {
+    if (!seen.has(n)) {
+      seen.add(n);
+      out.push(n);
+    }
+  }
+  return out;
+}
+
+/** Compass direction of the route (start→end or start→mid for loops). Coords are [lng, lat][]. */
+function getRouteCompassDirection(coords: [number, number][]): string | undefined {
+  if (!coords?.length || coords.length < 2) return undefined;
+  const a = coords[0];
+  const b = coords[coords.length - 1];
+  const latA = a[1];
+  const lngA = a[0];
+  let latB = b[1];
+  let lngB = b[0];
+  if (Math.abs(latA - latB) < 1e-5 && Math.abs(lngA - lngB) < 1e-5) {
+    const mid = coords[Math.floor(coords.length / 2)];
+    latB = mid[1];
+    lngB = mid[0];
+  }
+  return bearingToCompass(getBearing(latA, lngA, latB, lngB));
 }
 
 export async function POST(req: NextRequest) {
@@ -2808,7 +3066,7 @@ export async function POST(req: NextRequest) {
       effectiveDuration = 45;
     }
     if (pattern === "mood_only" && effectiveDuration == null) {
-      effectiveDuration = DEFAULT_MOOD_ONLY_DURATION;
+      effectiveDuration = intent === "quick" ? 15 : DEFAULT_MOOD_ONLY_DURATION;
     }
 
     // When no destination (or mood_only): ask for duration unless we have one. If LLM already set suggested_duration (e.g. "30 min loop"), use it and skip picker. mood_and_area is excluded — it uses a default above.
@@ -2923,8 +3181,29 @@ export async function POST(req: NextRequest) {
 
             let summary = buildSummary(waterfrontRoute.duration, waterfrontRoute.distance, tags, intent, isNight);
             try {
-              const desc = await generateDescription(intent, breakdown, waterfrontRoute.duration, waterfrontRoute.distance, parsedArea, isNight);
-              if (desc) summary = desc;
+              const wfNeighborhoods = getRouteNeighborhoods(waterfrontRoute.coordinates);
+              const wfGrounded =
+                wfNeighborhoods.length > 0
+                  ? {
+                      routeNeighborhoods: wfNeighborhoods,
+                      compassDirection: getRouteCompassDirection(waterfrontRoute.coordinates),
+                      isLoop: false,
+                      destinationName: parsedArea,
+                    }
+                  : undefined;
+              const desc = await generateDescription(
+                intent,
+                breakdown,
+                waterfrontRoute.duration,
+                waterfrontRoute.distance,
+                parsedArea,
+                isNight,
+                undefined,
+                undefined,
+                undefined,
+                wfGrounded
+              );
+              if (desc) summary = stripSummaryQuotes(desc) || desc;
             } catch {
               /* keep template */
             }
@@ -3023,15 +3302,29 @@ export async function POST(req: NextRequest) {
             }
             let summary = buildSummary(explorationRoute.duration, explorationRoute.distance, tags, intent, isNight);
             try {
+              const exNeighborhoods = getRouteNeighborhoods(explorationRoute.coordinates);
+              const exGrounded =
+                exNeighborhoods.length > 0
+                  ? {
+                      routeNeighborhoods: exNeighborhoods,
+                      compassDirection: getRouteCompassDirection(explorationRoute.coordinates),
+                      isLoop: false,
+                      destinationName: parsedArea,
+                    }
+                  : undefined;
               const desc = await generateDescription(
                 intent,
                 breakdown,
                 explorationRoute.duration,
                 explorationRoute.distance,
                 parsedArea,
-                isNight
+                isNight,
+                undefined,
+                undefined,
+                undefined,
+                exGrounded
               );
-              if (desc) summary = desc;
+              if (desc) summary = stripSummaryQuotes(desc) || desc;
             } catch {
               /* keep template */
             }
@@ -3177,8 +3470,29 @@ export async function POST(req: NextRequest) {
 
             let summary = buildSummary(explorationRoute.duration, explorationRoute.distance, tags, intent, isNight);
             try {
-              const desc = await generateDescription(intent, breakdown, explorationRoute.duration, explorationRoute.distance, parsedArea, isNight);
-              if (desc) summary = desc;
+              const ex2Neighborhoods = getRouteNeighborhoods(explorationRoute.coordinates);
+              const ex2Grounded =
+                ex2Neighborhoods.length > 0
+                  ? {
+                      routeNeighborhoods: ex2Neighborhoods,
+                      compassDirection: getRouteCompassDirection(explorationRoute.coordinates),
+                      isLoop: false,
+                      destinationName: parsedArea,
+                    }
+                  : undefined;
+              const desc = await generateDescription(
+                intent,
+                breakdown,
+                explorationRoute.duration,
+                explorationRoute.distance,
+                parsedArea,
+                isNight,
+                undefined,
+                undefined,
+                undefined,
+                ex2Grounded
+              );
+              if (desc) summary = stripSummaryQuotes(desc) || desc;
             } catch {
               /* keep template */
             }
@@ -3297,15 +3611,34 @@ export async function POST(req: NextRequest) {
 
         let summary = buildSummary(themedRoute.duration, themedRoute.distance, tags, intent, isNight);
         try {
+          const themeDest = parsedThemeName || parsedPoiQuery;
+          const themeNeighborhoods = getRouteNeighborhoods(themedRoute.coordinates);
+          const themeGrounded =
+            themeNeighborhoods.length > 0
+              ? {
+                  routeNeighborhoods: themeNeighborhoods,
+                  compassDirection: getRouteCompassDirection(themedRoute.coordinates),
+                  isLoop: false,
+                  destinationName: themeDest,
+                }
+              : undefined;
+          const themeDiscoveryOptions =
+            !themeGrounded && (intent === "discover" || intent === "scenic" || intent === "lively") && themeDest
+              ? { neighborhood: parsedArea ?? undefined }
+              : undefined;
           const desc = await generateDescription(
             intent,
             breakdown,
             themedRoute.duration,
             themedRoute.distance,
-            parsedThemeName || parsedPoiQuery,
-            isNight
+            themeDest,
+            isNight,
+            themeDiscoveryOptions,
+            undefined,
+            undefined,
+            themeGrounded
           );
-          if (desc) summary = desc;
+          if (desc) summary = stripSummaryQuotes(desc) || desc;
         } catch {
           /* keep template */
         }
@@ -3388,7 +3721,7 @@ export async function POST(req: NextRequest) {
         }
         console.log("[route] Loop in area, shifted origin to:", parsedArea);
       }
-      // For a loop, total duration is effectiveDuration so one-way = half (e.g. 20 min total → 10 min out → ~800m). For one-way, use full duration.
+      // For a loop, total duration is effectiveDuration so one-way = half (25 min × 80 m/min = 2 km total → 1 km out). For one-way, use full duration.
       const totalDurationSeconds = effectiveDuration! * 60;
       const fullDurationSeconds = isLoop
         ? Math.min(totalDurationSeconds / 2, (MAX_ROUTE_DURATION_MIN * 60) / 2)
@@ -3412,16 +3745,18 @@ export async function POST(req: NextRequest) {
         destination_name = namedDest.name;
         destination_address = namedDest.description;
       } else if (isSurprise) {
-        const outboundM = effectiveDuration! * 80;
+        const outboundM = Math.min(effectiveDuration! * ROUTE_DISTANCE_M_PER_MIN, 2500);
         const bearingOffset = typeof retryCount === "number" ? retryCount * 111 : 0;
-        waypoint = waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, (Math.random() * 360 + bearingOffset) % 360);
+        waypoint = clampWaypointToBarcelona(
+          waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, (Math.random() * 360 + bearingOffset) % 360)
+        );
       } else if (isLoop) {
-        const outboundM = (effectiveDuration! * 80) / 2;
+        const outboundM = (effectiveDuration! * ROUTE_DISTANCE_M_PER_MIN) / 2;
         const bearingOffset = typeof retryCount === "number" ? retryCount * 111 : 0;
         let best: { route: RouteSegment; wp: [number, number]; score: number } | null = null;
         for (let attempt = 0; attempt < 3; attempt++) {
           const bearing = (Math.random() * 360 + bearingOffset) % 360;
-          const wp = waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, bearing);
+          const wp = clampWaypointToBarcelona(waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, bearing));
           try {
             const outRoutes = await fetchOrsRoutes(loopOrigin, wp, intent, forceAvoidZones);
             if (!outRoutes[0]) continue;
@@ -3456,9 +3791,11 @@ export async function POST(req: NextRequest) {
         }
       } else {
         if (intent === "discover" && !namedDest) {
-          const outboundM = effectiveDuration! * 80;
+          const outboundM = Math.min(effectiveDuration! * ROUTE_DISTANCE_M_PER_MIN, 2500);
           const bearingOffset = typeof retryCount === "number" ? retryCount * 111 : 0;
-          waypoint = waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, (Math.random() * 360 + bearingOffset) % 360);
+          waypoint = clampWaypointToBarcelona(
+            waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, (Math.random() * 360 + bearingOffset) % 360)
+          );
         } else {
           const boundary = await fetchIsochrone(loopOrigin[0], loopOrigin[1], fullDurationSeconds);
           waypoint = pickWaypointFromBoundary(
@@ -3472,6 +3809,7 @@ export async function POST(req: NextRequest) {
           );
         }
       }
+      let builtAsLoopInFallback = false;
       if (!oneWayRoute) {
         let orsRoutes = await fetchOrsRoutes(loopOrigin, waypoint, intent, forceAvoidZones);
         oneWayRoute = orsRoutes[0] ?? null;
@@ -3479,8 +3817,10 @@ export async function POST(req: NextRequest) {
           // Retry once with a different waypoint before failing
           let retryWaypoint: [number, number] | null = null;
           if (isLoop) {
-            const outboundM = (effectiveDuration! * 80) / 2;
-            retryWaypoint = waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, (Math.random() * 360 + 200) % 360);
+            const outboundM = (effectiveDuration! * ROUTE_DISTANCE_M_PER_MIN) / 2;
+            retryWaypoint = clampWaypointToBarcelona(
+              waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, (Math.random() * 360 + 200) % 360)
+            );
           } else {
             try {
               const boundary = await fetchIsochrone(loopOrigin[0], loopOrigin[1], fullDurationSeconds);
@@ -3504,21 +3844,15 @@ export async function POST(req: NextRequest) {
           }
         }
         if (!oneWayRoute) {
-          if (effectiveDuration != null && effectiveDuration < 20) {
-            return NextResponse.json(
-              { error: "That's a bit too short for a route — try 15+ minutes." },
-              { status: 400 }
-            );
-          }
-          // mood_only: never fail — fall back to loop route
+          // mood_only: never fail — fall back to loop route (no duration error)
           console.log("[route] One-way mood_only failed, falling back to loop route");
           isLoop = true;
-          const outboundM = (effectiveDuration! * 80) / 2;
+          const outboundM = (effectiveDuration! * ROUTE_DISTANCE_M_PER_MIN) / 2;
           const bearingOffset = typeof retryCount === "number" ? retryCount * 111 : 0;
           let loopBest: { route: RouteSegment; wp: [number, number]; score: number } | null = null;
           for (let attempt = 0; attempt < 3; attempt++) {
             const bearing = (Math.random() * 360 + bearingOffset) % 360;
-            const wp = waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, bearing);
+            const wp = clampWaypointToBarcelona(waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, bearing));
             try {
               const outRoutes = await fetchOrsRoutes(loopOrigin, wp, intent, forceAvoidZones);
               if (!outRoutes[0]) continue;
@@ -3539,6 +3873,7 @@ export async function POST(req: NextRequest) {
           if (loopBest) {
             oneWayRoute = loopBest.route;
             waypoint = loopBest.wp;
+            builtAsLoopInFallback = true;
           } else {
             const boundary = await fetchIsochrone(loopOrigin[0], loopOrigin[1], fullDurationSeconds);
             waypoint = pickWaypointFromBoundary(
@@ -3560,10 +3895,41 @@ export async function POST(req: NextRequest) {
                 duration: oneWayRoute.duration + returnRoute.duration,
                 distance: oneWayRoute.distance + returnRoute.distance,
               };
+              builtAsLoopInFallback = true;
             }
           }
         }
-        if (isLoop) {
+        if (!oneWayRoute) {
+          // Simple random direction: short distance, clamped to Barcelona — never show error
+          console.log("[route] Loop fallback failed, trying simple random direction");
+          for (const distM of [500, 400, 300, 200]) {
+            const wp = clampWaypointToBarcelona(
+              waypointFromBearing(loopOrigin[0], loopOrigin[1], distM, Math.random() * 360)
+            );
+            try {
+              const orsRoutes = await fetchOrsRoutes(loopOrigin, wp, intent, forceAvoidZones);
+              if (orsRoutes[0]) {
+                oneWayRoute = orsRoutes[0];
+                waypoint = wp;
+                break;
+              }
+            } catch {
+              continue;
+            }
+          }
+        }
+        if (!oneWayRoute) {
+          // Last resort: fixed short leg so we always return a route
+          const wp = clampWaypointToBarcelona(
+            waypointFromBearing(loopOrigin[0], loopOrigin[1], 250, 0)
+          );
+          const orsRoutes = await fetchOrsRoutes(loopOrigin, wp, intent, forceAvoidZones);
+          if (orsRoutes[0]) {
+            oneWayRoute = orsRoutes[0];
+            waypoint = wp;
+          }
+        }
+        if (isLoop && !builtAsLoopInFallback && oneWayRoute) {
           const returnOffset = offsetPerpendicular(waypoint[0], waypoint[1], loopOrigin[0], loopOrigin[1], 200);
           const returnRoute = await fetchOrsWaypointRoute(waypoint, [returnOffset, loopOrigin], intent, forceAvoidZones);
           const outCoords = oneWayRoute.coordinates;
@@ -3578,16 +3944,36 @@ export async function POST(req: NextRequest) {
       const requestedMinutes = effectiveDuration ?? 30;
       const isDiscoverOrSurprise = intent === "discover" || isSurprise;
       const maxAcceptableMinutes = isDiscoverOrSurprise ? requestedMinutes * 2 : requestedMinutes * 1.5;
-      const routeMinutes = oneWayRoute.duration / 60;
-      if (routeMinutes > maxAcceptableMinutes) {
+      let routeMinutes = oneWayRoute.duration / 60;
+      if (routeMinutes > requestedMinutes * 1.5 && (isSurprise || (intent === "discover" && !namedDest))) {
+        const closerOutboundM = Math.min(
+          (requestedMinutes * ROUTE_DISTANCE_M_PER_MIN) * 0.5,
+          (effectiveDuration ?? 25) * ROUTE_DISTANCE_M_PER_MIN * 0.6
+        );
+        const wpCloser = clampWaypointToBarcelona(
+          waypointFromBearing(loopOrigin[0], loopOrigin[1], closerOutboundM, Math.random() * 360)
+        );
+        try {
+          const orsRoutesCloser = await fetchOrsRoutes(loopOrigin, wpCloser, intent, forceAvoidZones);
+          if (orsRoutesCloser[0] && orsRoutesCloser[0].duration < oneWayRoute.duration) {
+            oneWayRoute = orsRoutesCloser[0];
+            waypoint = wpCloser;
+            routeMinutes = oneWayRoute.duration / 60;
+          }
+        } catch {
+          /* keep current route */
+        }
+      }
+      if (routeMinutes > maxAcceptableMinutes && !isSurprise) {
         return NextResponse.json(
           { error: "Couldn't find a route that fits your time. Try a longer duration." },
           { status: 400 }
         );
       }
       if (
-        oneWayRoute.duration > FRONTEND_MAX_DURATION_MIN * 60 ||
-        oneWayRoute.distance > FRONTEND_MAX_DISTANCE_M
+        (oneWayRoute.duration > FRONTEND_MAX_DURATION_MIN * 60 ||
+          oneWayRoute.distance > FRONTEND_MAX_DISTANCE_M) &&
+        !isSurprise
       ) {
         return NextResponse.json(
           { error: "Couldn't find a route that fits your time. Try a longer duration." },
@@ -3635,17 +4021,31 @@ export async function POST(req: NextRequest) {
         }
       }
       let summary = buildSummary(oneWayRoute.duration, oneWayRoute.distance, tags, intent, isNight);
+      const nonDestHighlights = highlights.filter((h) => h.type !== "destination");
+      const isDiscoveryOneWay = !isLoop && (intent === "discover" || intent === "scenic" || intent === "lively");
       try {
         const destLabel = destination_name ?? null;
-        const discoveryOptions =
-          !isLoop && destLabel && (intent === "discover" || intent === "scenic" || intent === "lively")
+        const routeNeighborhoods = getRouteNeighborhoods(oneWayRoute.coordinates);
+        const compassDirection = getRouteCompassDirection(oneWayRoute.coordinates);
+        const groundedData =
+          routeNeighborhoods.length > 0
             ? {
-                highlightTypesOrNames: highlights
-                  .map((h) => (h.type && h.type !== "destination" ? h.type : h.name ?? "").trim())
-                  .filter(Boolean)
-                  .slice(0, 6),
+                routeNeighborhoods,
+                compassDirection: compassDirection ?? undefined,
+                isLoop,
+                destinationName: destLabel,
               }
             : undefined;
+        const startNeighborhood = getNeighborhoodForCoords(loopOrigin[0], loopOrigin[1]);
+        const isSurpriseOrRandomDiscovery = isSurprise || (isDiscoveryOneWay && !destLabel);
+        const surpriseOptions = isSurpriseOrRandomDiscovery
+          ? { startNeighborhood, compassDirection: compassDirection ?? undefined }
+          : undefined;
+        const discoveryOptions =
+          !isLoop && destLabel && (intent === "discover" || intent === "scenic" || intent === "lively")
+            ? { neighborhood: startNeighborhood }
+            : undefined;
+        const loopOptions = isLoop ? { areaName: "Barcelona" as string } : undefined;
         const desc = await generateDescription(
           intent,
           breakdown,
@@ -3653,21 +4053,16 @@ export async function POST(req: NextRequest) {
           oneWayRoute.distance,
           destLabel,
           isNight,
-          discoveryOptions
+          discoveryOptions,
+          loopOptions,
+          surpriseOptions,
+          groundedData
         );
-        if (desc) summary = desc;
+        if (desc) summary = stripSummaryQuotes(desc) || desc;
       } catch {
         // keep template
       }
       if (isEmotionalSupport && summary) summary = softenSummaryForEmotionalSupport(summary);
-      const isDiscoveryOneWay = !isLoop && (intent === "discover" || intent === "scenic" || intent === "lively");
-      const nonDestHighlights = highlights.filter((h) => h.type !== "destination");
-      if (isDiscoveryOneWay && nonDestHighlights.length > 0) {
-        const passNames = nonDestHighlights.slice(0, 3).map((h) => h.name ?? h.label).filter(Boolean);
-        if (passNames.length > 0) {
-          summary = `Passes ${passNames.join(", ")} · towards ${destination_name || "the area"}`;
-        }
-      }
       const poisForPreview =
         isDiscoveryOneWay && nonDestHighlights.length > 0
           ? nonDestHighlights.slice(0, 5).map((h) => ({
@@ -3873,14 +4268,60 @@ export async function POST(req: NextRequest) {
     let quickSummary = quick.summary;
     if (intent !== "quick" || isNight) {
       try {
-        const recDesc = await generateDescription(intent, recommended.breakdown, recDuration, recDistance, destination_name, isNight);
+        const recNeighborhoods = getRouteNeighborhoods(recommended.coordinates);
+        const recGrounded =
+          recNeighborhoods.length > 0
+            ? {
+                routeNeighborhoods: recNeighborhoods,
+                compassDirection: getRouteCompassDirection(recommended.coordinates),
+                isLoop: false,
+                destinationName: destination_name,
+              }
+            : undefined;
+        const recDiscoveryOptions =
+          (intent === "discover" || intent === "scenic" || intent === "lively") && destination_name
+            ? {}
+            : undefined;
+        const recDesc = await generateDescription(
+          intent,
+          recommended.breakdown,
+          recDuration,
+          recDistance,
+          destination_name,
+          isNight,
+          recDiscoveryOptions,
+          undefined,
+          undefined,
+          recGrounded
+        );
         if (recDesc) recommendedSummary = stripSummaryQuotes(recDesc) || recDesc;
       } catch {
         /* keep template */
       }
     }
     try {
-      const qDesc = await generateDescription("quick", quick.breakdown, qDuration, qDistance, destination_name, isNight);
+      const qNeighborhoods = getRouteNeighborhoods(quick.coordinates);
+      const qGrounded =
+        qNeighborhoods.length > 0
+          ? {
+              routeNeighborhoods: qNeighborhoods,
+              compassDirection: getRouteCompassDirection(quick.coordinates),
+              isLoop: false,
+              destinationName: destination_name,
+            }
+          : undefined;
+      const qDesc = await generateDescription(
+        "quick",
+        quick.breakdown,
+        qDuration,
+        qDistance,
+        destination_name,
+        isNight,
+        undefined,
+        undefined,
+        undefined,
+        qGrounded
+      );
       if (qDesc) quickSummary = stripSummaryQuotes(qDesc) || qDesc;
     } catch (err) {
       console.warn("[route] generateDescription failed for quick summary:", err);
@@ -3948,18 +4389,6 @@ export async function POST(req: NextRequest) {
               description: (h as { description?: string | null }).description ?? null,
             }))
         : undefined;
-    if (pattern === "themed_walk" && recommendedPois && recommendedPois.length > 0 && destination_name) {
-      const passNames = recommendedPois.slice(0, 3).map((p) => p.name).filter(Boolean);
-      if (passNames.length > 0) {
-        recommendedSummary = `Passes ${passNames.join(", ")} · towards ${destination_name}`;
-      }
-      if (quickPois && quickPois.length > 0 && quickSummary) {
-        const qPassNames = quickPois.slice(0, 3).map((p) => p.name).filter(Boolean);
-        if (qPassNames.length > 0) {
-          quickSummary = `Passes ${qPassNames.join(", ")} · towards ${destination_name}`;
-        }
-      }
-    }
     const recommendedPayload = {
       coordinates: simplifyRoute(recommended.coordinates, 0.00008),
       duration: recDuration,

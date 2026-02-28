@@ -22,7 +22,9 @@ html {
 
 html,
 body {
+  overflow: hidden;
   height: 100%;
+  height: -webkit-fill-available;
   overscroll-behavior: none;
 }
 
@@ -72,16 +74,6 @@ body {
 .navigation-arrow {
   background: none !important;
   border: none !important;
-}
-
-/* Loop route: flowing dashes show walking direction on the polyline */
-.route-flow {
-  animation: flow 2s linear infinite;
-}
-@keyframes flow {
-  to {
-    stroke-dashoffset: -20;
-  }
 }
 
 @keyframes slide-up {
