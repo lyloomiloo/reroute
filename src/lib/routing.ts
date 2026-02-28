@@ -118,7 +118,9 @@ export type RouteApiResponse = RoutesResponse | DurationPromptResponse | PlaceOp
 export function isDurationPrompt(
   data: RouteApiResponse
 ): data is DurationPromptResponse {
-  return "needs_duration" in data && data.needs_duration === true;
+  if (data == null || typeof data !== "object") return false;
+  const needsDuration = (data as Record<string, unknown>).needs_duration;
+  return needsDuration === true || needsDuration === "true";
 }
 
 export function isPlaceOptionsResponse(
@@ -165,7 +167,9 @@ export async function getRoute(
   }
 
   const data = await res.json();
-  if (data.edge_case === true) {
+
+  // Check edge case first (no route, special UI message)
+  if (data && data.edge_case === true) {
     return {
       edge_case: true,
       message: data.message ?? "",
@@ -174,7 +178,10 @@ export async function getRoute(
       theme_name: data.theme_name,
     } as EdgeCaseResponse;
   }
-  if (data.needs_duration === true) {
+
+  // Duration prompt: API asks for duration before generating route. Must be checked BEFORE recommended — this response has no route.
+  const needsDuration = data && ((data as Record<string, unknown>).needs_duration === true || (data as Record<string, unknown>).needs_duration === "true");
+  if (needsDuration) {
     const defaultOptions = [
       { label: "5 – 15 min", value: 10 },
       { label: "15 – 45 min", value: 30 },
@@ -190,6 +197,8 @@ export async function getRoute(
       auto_duration: typeof data.auto_duration === "number" && Number.isFinite(data.auto_duration) ? data.auto_duration : undefined,
     };
   }
+
+  // Place selection (multiple destinations)
   if (data.needs_place_selection === true && Array.isArray(data.place_options) && data.place_options.length > 0) {
     return {
       place_options: data.place_options,
@@ -197,7 +206,11 @@ export async function getRoute(
       place_selection_heading: (data as { place_selection_heading?: string }).place_selection_heading,
     } as PlaceOptionsResponse;
   }
-  if (!data.recommended?.coordinates?.length) throw new Error(ROUTE_NOT_FOUND_MSG);
+
+  // Full route response must have recommended coordinates; otherwise treat as error (only after ruling out duration/place prompts)
+  if (!data.recommended?.coordinates?.length) {
+    throw new Error(ROUTE_NOT_FOUND_MSG);
+  }
   return {
     recommended: data.recommended,
     quick: data.quick,

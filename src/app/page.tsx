@@ -234,6 +234,7 @@ function PageContent() {
     const timeout = setTimeout(() => controller.abort(), ROUTE_TIMEOUT_MS);
     try {
       const result = await getRoute(origin, text, { signal: controller.signal, forceNightMode: nightModeOverride });
+      console.log("[frontend] API response keys:", Object.keys(result));
       if (isEdgeCaseResponse(result)) {
         clearTimeout(timeout);
         setEdgeCaseMessage(result.message);
