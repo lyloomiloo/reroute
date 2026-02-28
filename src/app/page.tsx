@@ -94,6 +94,7 @@ function PageContent() {
     options: { label: string; value: number }[];
   } | null>(null);
   const [placeOptions, setPlaceOptions] = useState<PlaceOption[] | null>(null);
+  const [placeOptionsHeading, setPlaceOptionsHeading] = useState<string>("CHOOSE A PLACE");
   const [placeOptionsShownCount, setPlaceOptionsShownCount] = useState(5);
   const [placeOptionsIntent, setPlaceOptionsIntent] = useState<Intent | null>(null);
   const [placeOptionsFocusedIndex, setPlaceOptionsFocusedIndex] = useState(0);
@@ -223,6 +224,7 @@ function PageContent() {
     setRouteError(null);
     setDurationPrompt(null);
     setPlaceOptions(null);
+    setPlaceOptionsHeading("CHOOSE A PLACE");
     setPlaceOptionsShownCount(5);
     setLastPlaceQuery(null);
     setEdgeCaseMessage(null);
@@ -264,6 +266,7 @@ function PageContent() {
       } else if (isPlaceOptionsResponse(result)) {
         clearTimeout(timeout);
         setPlaceOptions(result.place_options);
+        setPlaceOptionsHeading(result.place_selection_heading ?? "CHOOSE A PLACE");
         setPlaceOptionsShownCount(Math.min(5, result.place_options.length));
         setPlaceOptionsIntent(result.intent);
         setPlaceOptionsFocusedIndex(0);
@@ -300,6 +303,7 @@ function PageContent() {
 
   const dismissPlaceOptions = () => {
     setPlaceOptions(null);
+    setPlaceOptionsHeading("CHOOSE A PLACE");
     setPlaceOptionsShownCount(5);
     setPlaceOptionsIntent(null);
     setPlaceOptionsFocusedIndex(0);
@@ -406,6 +410,7 @@ function PageContent() {
   const handleClearRoute = () => {
     setRoutes(null);
     setPlaceOptions(null);
+    setPlaceOptionsHeading("CHOOSE A PLACE");
     setPlaceOptionsShownCount(5);
     setMoodInput("");
     setLastRouteMoodText("");
@@ -510,6 +515,7 @@ function PageContent() {
     console.log("[Route here] selected place coordinates:", { lat: place.lat, lng: place.lng, name: place.name });
     setIsLoading(true);
     setPlaceOptions(null);
+    setPlaceOptionsHeading("CHOOSE A PLACE");
     setPlaceOptionsShownCount(5);
     setRouteError(null);
     const controller = new AbortController();
@@ -956,6 +962,7 @@ function PageContent() {
                       clearDestinationInfo();
                       setDurationPrompt(null);
                       setPlaceOptions(null);
+                      setPlaceOptionsHeading("CHOOSE A PLACE");
                       setPlaceOptionsShownCount(5);
                     }
                     setTimeout(() => {
@@ -1015,6 +1022,7 @@ function PageContent() {
                     clearDestinationInfo();
                     setDurationPrompt(null);
                     setPlaceOptions(null);
+                    setPlaceOptionsHeading("CHOOSE A PLACE");
                     setPlaceOptionsShownCount(5);
                   }}
                   className="group inline-flex items-center gap-1.5 py-0.5 font-mono text-xs font-normal tracking-wide text-[#4A90D9]/70 hover:text-[#4A90D9] reroute-uppercase whitespace-nowrap"
@@ -1154,7 +1162,7 @@ function PageContent() {
                 <div className="px-4 py-3">
                   <div className="flex justify-between items-center mb-2">
                     <span className="font-mono font-bold text-lg tracking-wide">
-                      CHOOSE A PLACE
+                      {placeOptionsHeading}
                     </span>
                     <button
                       type="button"

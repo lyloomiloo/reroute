@@ -2462,12 +2462,7 @@ export async function POST(req: NextRequest) {
                 if (places.length === 0) {
                   places = await searchPlace(`${name} barcelona`, originCoords[0], originCoords[1], 5, 8000);
                 }
-                if (places.length > 0) {
-                  destCoords = [places[0].lat, places[0].lng];
-                  destination_name = places[0].name;
-                  destination_address = places[0].address ?? places[0].description ?? null;
-                  destination_photo = places[0].photo_url ?? null;
-                } else {
+                if (places.length === 0) {
                   const geo = await geocodePlace(name);
                   if (geo) {
                     destCoords = [geo.lat, geo.lng];
@@ -2478,6 +2473,22 @@ export async function POST(req: NextRequest) {
                       { status: 400 }
                     );
                   }
+                } else if (places.length === 1) {
+                  destCoords = [places[0].lat, places[0].lng];
+                  destination_name = places[0].name;
+                  destination_address = places[0].address ?? places[0].description ?? null;
+                  destination_photo = places[0].photo_url ?? null;
+                } else {
+                  const optionsForSelection = places.slice(0, 3).map((p) => ({
+                    ...p,
+                    description: p.address ?? p.description,
+                  }));
+                  return NextResponse.json({
+                    place_options: optionsForSelection,
+                    needs_place_selection: true,
+                    intent,
+                    place_selection_heading: "WHICH ONE?",
+                  });
                 }
               }
             }

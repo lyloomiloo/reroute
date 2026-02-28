@@ -81,6 +81,8 @@ export interface DurationPromptResponse {
 export interface PlaceOptionsResponse {
   place_options: PlaceOption[];
   intent: Intent;
+  /** e.g. "WHICH ONE?" for destination disambiguation; default "CHOOSE A PLACE" */
+  place_selection_heading?: string;
 }
 
 export interface RouteTypePromptResponse {
@@ -180,6 +182,7 @@ export async function getRoute(
     return {
       place_options: data.place_options,
       intent: (data.intent as Intent) ?? "calm",
+      place_selection_heading: (data as { place_selection_heading?: string }).place_selection_heading,
     } as PlaceOptionsResponse;
   }
   if (!data.recommended?.coordinates?.length) throw new Error(ROUTE_NOT_FOUND_MSG);
