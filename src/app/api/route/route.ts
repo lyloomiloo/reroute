@@ -3957,14 +3957,14 @@ export async function POST(req: NextRequest) {
       )
     );
 
-    const isDiscoveryPreview = pattern === "themed_walk";
+    // POIs for route preview dots: any route with non-destination highlights gets up to 5 for the map (discover, scenic, lively, themed_walk, etc.)
     const recommendedPois =
-      isDiscoveryPreview && recommendedHighlights.length > 0
+      recommendedHighlights.length > 0
         ? recommendedHighlights
-            .filter((h) => h.type !== "destination")
+            .filter((h) => h.type !== "destination" && (h.name ?? h.label ?? "").trim() !== "")
             .slice(0, 5)
             .map((h) => ({
-              name: h.name ?? h.label,
+              name: (h.name ?? h.label ?? "").trim(),
               lat: h.lat,
               lng: h.lng,
               type: h.type,
@@ -3973,12 +3973,12 @@ export async function POST(req: NextRequest) {
             }))
         : undefined;
     const quickPois =
-      isDiscoveryPreview && quickHighlights.length > 0
+      quickHighlights.length > 0
         ? quickHighlights
-            .filter((h) => h.type !== "destination")
+            .filter((h) => h.type !== "destination" && (h.name ?? h.label ?? "").trim() !== "")
             .slice(0, 5)
             .map((h) => ({
-              name: h.name ?? h.label,
+              name: (h.name ?? h.label ?? "").trim(),
               lat: h.lat,
               lng: h.lng,
               type: h.type,
