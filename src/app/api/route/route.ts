@@ -56,7 +56,7 @@ const WEIGHT_PROFILES: Record<string, { noise: number; green: number; clean: num
   quick:    { noise: 0.10, green: 0.10, clean: 0.10, cultural: 0.10 },
 };
 
-const SIMULATE_NIGHT = true; // Bypass night logic for testing; set true to repro ORS profile error and check server log for "[route] ORS body"
+const SIMULATE_NIGHT = false; // Bypass night logic for testing; set true to repro ORS profile error and check server log for "[route] ORS body"
 
 if (!process.env.STREET_DATA_URL) {
   console.warn("[route] STREET_DATA_URL not set — will use local file only");
