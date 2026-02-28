@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, CircleMarker, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -558,20 +559,23 @@ export default function MapViewClient({
     }
   }, [isNavigating, userPosition?.lat, userPosition?.lng, routeCoordinates, onRemainingUpdate, onArrived, isLoopRoute]);
 
-  // Proximity check: when user is within 50m of an unseen POI, show toast and mark seen
+  // Proximity check: when user is within 50m of an unseen POI (with a name), show toast and mark seen
   useEffect(() => {
     if (!isNavigating || !userPosition || !highlights?.length) return;
     for (const h of highlights) {
+      const name = (h.name ?? h.label ?? "").trim();
+      if (!name) continue;
       const key = poiKey(h.lat, h.lng);
       if (seenPoiKeys.has(key)) continue;
       const d = getDistance(userPosition.lat, userPosition.lng, h.lat, h.lng);
       if (d < 50) {
         setSeenPoiKeys((prev) => new Set(prev).add(key));
         setToastPoi({
-          name: h.name ?? h.label,
+          name,
           description: h.description,
           placeId: (h as RouteHighlight).placeId,
           photoRef: (h as RouteHighlight).photoRef,
+          photo_url: (h as RouteHighlight).photo_url ?? undefined,
           type: h.type,
         });
         break;
@@ -643,60 +647,61 @@ export default function MapViewClient({
           {locationError}
         </div>
       )}
-      {toastPoi && (
-        <div
-          className="fixed bottom-4 left-4 right-4 bg-white rounded-lg shadow-lg overflow-hidden animate-slide-up z-[250]"
-          style={{ boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}
-          role="status"
-          aria-live="polite"
-        >
-          {toastPoi.photo_url ? (
-            <img
-              src={toastPoi.photo_url}
-              alt={toastPoi.name}
-              className="w-full h-28 object-cover"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
-          ) : toastPoi.placeId ? (
-            <img
-              src={`/api/place-photo?name=places/${encodeURIComponent(toastPoi.placeId)}/photos/default`}
-              alt={toastPoi.name}
-              className="w-full h-28 object-cover"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
-          ) : (
-            <div className="w-full h-28 bg-gray-100 flex items-center justify-center">
-              <span className="font-mono text-xs text-gray-400">📍 {toastPoi.type ?? "POI"}</span>
+      {typeof document !== "undefined" &&
+        toastPoi &&
+        createPortal(
+          <div
+            className="fixed bottom-4 left-4 right-4 bg-white rounded-lg shadow-lg overflow-hidden animate-slide-up"
+            style={{ boxShadow: "0 4px 20px rgba(0,0,0,0.15)", zIndex: 150 }}
+            role="status"
+            aria-live="polite"
+          >
+            {(toastPoi.photo_url || toastPoi.placeId) ? (
+              toastPoi.photo_url ? (
+                <img
+                  src={toastPoi.photo_url}
+                  alt={toastPoi.name}
+                  className="w-full h-28 object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : toastPoi.placeId ? (
+                <img
+                  src={`/api/place-photo?name=places/${encodeURIComponent(toastPoi.placeId)}/photos/default`}
+                  alt={toastPoi.name}
+                  className="w-full h-28 object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : null
+            ) : null}
+            <div className="p-3 flex items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="font-mono font-bold text-sm truncate text-gray-900">{toastPoi.name}</p>
+                {toastPoi.description ? (
+                  <p className="font-mono text-sm text-gray-500 line-clamp-2 mt-0.5">{toastPoi.description}</p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setToastPoi(null);
+                  if (toastTimeoutRef.current) {
+                    clearTimeout(toastTimeoutRef.current);
+                    toastTimeoutRef.current = null;
+                  }
+                }}
+                className="font-mono text-gray-400 hover:text-gray-600 text-sm flex-shrink-0"
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
             </div>
-          )}
-          <div className="p-3 flex items-start gap-3">
-            <div className="flex-1 min-w-0">
-              <p className="font-mono font-bold text-sm truncate text-gray-900">{toastPoi.name}</p>
-              {toastPoi.description ? (
-                <p className="font-mono text-sm text-gray-500 line-clamp-2 mt-0.5">{toastPoi.description}</p>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setToastPoi(null);
-                if (toastTimeoutRef.current) {
-                  clearTimeout(toastTimeoutRef.current);
-                  toastTimeoutRef.current = null;
-                }
-              }}
-              className="font-mono text-gray-400 hover:text-gray-600 text-sm flex-shrink-0"
-              aria-label="Dismiss"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
       <MapContainer
         center={center}
         zoom={zoom}
@@ -799,9 +804,11 @@ export default function MapViewClient({
           const showPoiInPreview = ["discover", "scenic", "lively", "cafe"].includes(routeIntent ?? "");
           const allHighlights = isNavigating || showPoiInPreview ? (highlights ?? []) : [];
           const isRealPoi = (h: RouteHighlight) => !!h.placeId;
-          const visibleHighlights = isNavigating
+          const hasName = (h: RouteHighlight) => (h.name ?? h.label ?? "").trim() !== "";
+          const visibleHighlights = (isNavigating
             ? allHighlights
-            : allHighlights.filter((h) => h.type === "destination" || isRealPoi(h));
+            : allHighlights.filter((h) => h.type === "destination" || isRealPoi(h))
+          ).filter(hasName);
           return visibleHighlights.map((h, i) => {
             const isDestination = h.type === "destination";
             const isPoiSeen = isNavigating && seenPoiKeys.has(poiKey(h.lat, h.lng));
@@ -823,8 +830,10 @@ export default function MapViewClient({
                 eventHandlers={{
                   click: (e) => {
                     L.DomEvent.stopPropagation(e);
+                    const name = (h.name ?? h.label ?? "").trim();
+                    if (!name) return;
                     setToastPoi({
-                      name: h.name ?? h.label ?? "",
+                      name,
                       description: h.description,
                       placeId: (h as RouteHighlight).placeId,
                       photoRef: (h as RouteHighlight).photoRef,
@@ -838,25 +847,27 @@ export default function MapViewClient({
           });
         })()}
         {previewPois && previewPois.length > 0 && !isNavigating &&
-          previewPois.map((poi, i) => (
-            <Marker
-              key={`preview-poi-${i}-${poi.lat}-${poi.lng}`}
-              position={[poi.lat, poi.lng]}
-              icon={PREVIEW_POI_DOT_ICON}
-              zIndexOffset={45}
-              eventHandlers={{
-                click: (e) => {
-                  L.DomEvent.stopPropagation(e);
-                  setToastPoi({
-                    name: poi.name,
-                    description: poi.description ?? undefined,
-                    photo_url: poi.photo_url ?? undefined,
-                    type: poi.type,
-                  });
-                },
-              }}
-            />
-          ))}
+          previewPois
+            .filter((poi) => (poi.name ?? "").trim() !== "")
+            .map((poi, i) => (
+              <Marker
+                key={`preview-poi-${i}-${poi.lat}-${poi.lng}`}
+                position={[poi.lat, poi.lng]}
+                icon={PREVIEW_POI_DOT_ICON}
+                zIndexOffset={45}
+                eventHandlers={{
+                  click: (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    setToastPoi({
+                      name: (poi.name ?? "").trim(),
+                      description: poi.description ?? undefined,
+                      photo_url: poi.photo_url ?? undefined,
+                      type: poi.type,
+                    });
+                  },
+                }}
+              />
+            ))}
         {customStartCoords && !isNavigating && !routeCoordinates?.length && (
           <Marker
             position={[customStartCoords[0], customStartCoords[1]]}

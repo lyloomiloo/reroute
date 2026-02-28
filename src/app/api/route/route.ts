@@ -2867,25 +2867,18 @@ export async function POST(req: NextRequest) {
     if (suggestedDuration != null && effectiveDuration == null) {
       effectiveDuration = suggestedDuration;
     }
-    if (pattern === "mood_and_area" && effectiveDuration == null) {
-      effectiveDuration = 45;
-    }
-    if (pattern === "mood_only" && effectiveDuration == null) {
-      effectiveDuration = intent === "quick" ? 15 : DEFAULT_MOOD_ONLY_DURATION;
-    }
 
-    // When no destination (or mood_only): ask for duration unless we have one. If LLM already set suggested_duration (e.g. "30 min loop"), use it and skip picker. mood_and_area is excluded — it uses a default above.
+    // When no destination / mood_only / mood_and_area / themed_walk: ask for duration unless we already have one (from body, LLM suggested_duration, or distance). Do NOT default effectiveDuration here — that would skip the picker.
     const isLoopWithDurationSpecified = pattern === "mood_only" && isLoop && (suggestedDuration != null || maxDurationMinutes != null);
-    const isAreaExploration = pattern === "mood_and_area";
     const isThemedWalk = pattern === "themed_walk";
     let mustAskDuration =
-      (destCoords === null || pattern === "mood_only" || isThemedWalk) &&
+      (destCoords === null || pattern === "mood_only" || pattern === "mood_and_area" || isThemedWalk) &&
       (effectiveDuration == null || (isLoopWithDurationSpecified && suggestedDuration == null));
 
     console.log("[route] effectiveDuration:", effectiveDuration, "suggested_duration:", suggestedDuration, "mustAskDuration:", mustAskDuration);
 
-    // At night, skip duration picker for mood_only — default to a shorter, safer walk (20 min) to minimize time outside
-    if (isNight && mustAskDuration && effectiveDuration == null) {
+    // Exception: night mode mood_only — skip picker and default to 20 min (only case we skip the picker besides user-stated duration)
+    if (isNight && pattern === "mood_only" && mustAskDuration && effectiveDuration == null) {
       effectiveDuration = 20;
       mustAskDuration = false;
     }
@@ -2915,6 +2908,14 @@ export async function POST(req: NextRequest) {
         message: "How long do you want to walk?",
         options: durationOptions,
       });
+    }
+
+    // Fallback defaults when we proceeded without asking (e.g. night mood_only already set to 20)
+    if (pattern === "mood_only" && effectiveDuration == null) {
+      effectiveDuration = intent === "quick" ? 15 : DEFAULT_MOOD_ONLY_DURATION;
+    }
+    if (pattern === "mood_and_area" && effectiveDuration == null) {
+      effectiveDuration = 45;
     }
 
     // AREA EXPLORATION ROUTES (after duration is confirmed)
