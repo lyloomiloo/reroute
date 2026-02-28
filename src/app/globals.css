@@ -132,7 +132,7 @@ body {
   inset: -2px;
   border-radius: 50%;
   border: 2px solid #000;
-  animation: pulse-ring 2s ease-out infinite;
+  animation: pulse-ring 5s ease-out infinite;
 }
 
 @keyframes countdown-dot-blink {
