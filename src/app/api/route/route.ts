@@ -683,64 +683,17 @@ async function fetchOrsRoutes(
     console.log("[route] Night mode: boosting quiet/green weights");
   }
 
-  // Night mode: force route around Raval via waypoints (avoid_polygons not reliable on ORS free tier)
-  const originLat = origin[0];
+  // Build ORS request: origin → destination. Night mode may add avoid_polygons or fallback to 4 waypoints.
   const originLng = origin[1];
-  const destLat = destination[0];
+  const originLat = origin[0];
   const destLng = destination[1];
+  const destLat = destination[0];
 
-  if (isNight) {
-    const waypoints: [number, number][] = [];
-    if (isInsideRaval(originLat, originLng)) {
-      waypoints.push(findNearestSafeCorridor(originLat, originLng));
-      console.log("[route] Night mode: origin in Raval → route to nearest safe corridor first");
-    }
-    if (isInsideRaval(destLat, destLng)) {
-      waypoints.push(findNearestSafeCorridor(destLat, destLng));
-      console.log("[route] Night mode: destination in Raval → route via nearest safe corridor");
-    }
-    if (waypoints.length > 0) {
-      const fullWaypoints: [number, number][] = [...waypoints, destination];
-      const safeRoute = await fetchOrsWaypointRoute(origin, fullWaypoints, intent, true);
-      return [{
-        coordinates: safeRoute.coordinates,
-        duration: safeRoute.duration,
-        distance: safeRoute.distance,
-      }];
-    }
-
-    // Route likely crosses Raval (origin/dest on opposite sides or inside): force via La Rambla
-    const originEastOfRaval = originLng > RAVAL_CROSS_BOUNDS.east;
-    const destWestOfRaval = destLng < RAVAL_CROSS_BOUNDS.west;
-    const originWestOfRaval = originLng < RAVAL_CROSS_BOUNDS.west;
-    const destEastOfRaval = destLng > RAVAL_CROSS_BOUNDS.east;
-    const routeLikelyCrossesRaval =
-      (originEastOfRaval && destWestOfRaval) ||
-      (originWestOfRaval && destEastOfRaval) ||
-      isInRavalForCrossCheck(originLat, originLng) ||
-      isInRavalForCrossCheck(destLat, destLng);
-
-    if (routeLikelyCrossesRaval) {
-      const midLat = (originLat + destLat) / 2;
-      const bestRambla = RAMBLA_WAYPOINTS.reduce((best, wp) =>
-        Math.abs(wp.lat - midLat) < Math.abs(best.lat - midLat) ? wp : best
-      );
-      const ramblaWp: [number, number] = [bestRambla.lat, bestRambla.lng];
-      console.log("[route] Night mode: route crosses Raval → forcing via La Rambla", bestRambla.name);
-      const safeRoute = await fetchOrsWaypointRoute(origin, [ramblaWp, destination], intent, true);
-      return [{
-        coordinates: safeRoute.coordinates,
-        duration: safeRoute.duration,
-        distance: safeRoute.distance,
-      }];
-    }
-  }
-
-  const orsCoords = [
-    [origin[1], origin[0]] as [number, number],
-    [destination[1], destination[0]] as [number, number],
+  let orsCoords: [number, number][] = [
+    [originLng, originLat],
+    [destLng, destLat],
   ];
-  console.log("[route] ORS coordinates (lng, lat):", { from: orsCoords[0], to: orsCoords[1] });
+
   const body: Record<string, unknown> = {
     coordinates: orsCoords,
     alternative_routes: {
@@ -750,9 +703,25 @@ async function fetchOrsRoutes(
     },
   };
 
+  if (isNight) {
+    const avoidRaval = {
+      type: "Polygon" as const,
+      coordinates: [[
+        [2.167, 41.383],   // NW - near Universitat/MACBA
+        [2.173, 41.383],   // NE - just west of La Rambla (leaves Rambla open)
+        [2.173, 41.3725],  // SE - just west of La Rambla at south end
+        [2.167, 41.3725],  // SW - just north of Paral·lel (leaves Paral·lel open)
+        [2.167, 41.383],   // close polygon
+      ]],
+    };
+    if (!body.options) body.options = {};
+    (body.options as Record<string, unknown>).avoid_polygons = avoidRaval;
+    console.log("[route] NIGHT MODE: avoid_polygons added for Raval");
+  }
+
   console.log("ORS REQUEST BODY:", JSON.stringify(body, null, 2));
 
-  const res = await fetch(
+  let res = await fetch(
     "https://api.openrouteservice.org/v2/directions/foot-walking/geojson",
     {
       method: "POST",
@@ -763,6 +732,32 @@ async function fetchOrsRoutes(
       body: JSON.stringify(body),
     }
   );
+
+  if (!res.ok && res.status === 400 && isNight) {
+    const errorText = await res.text();
+    console.log("[route] ORS 400 with avoid_polygons, full response:", errorText);
+    console.log("[route] NIGHT MODE: falling back to 4-waypoint route around Raval");
+    delete (body.options as Record<string, unknown>)?.avoid_polygons;
+    orsCoords = [
+      [originLng, originLat],
+      [2.174, 41.38],   // Plaça Catalunya / top of La Rambla
+      [2.175, 41.374],  // Bottom of La Rambla / Drassanes
+      [2.169, 41.373],  // Paral·lel near Sala Apolo
+      [destLng, destLat],
+    ];
+    body.coordinates = orsCoords;
+    res = await fetch(
+      "https://api.openrouteservice.org/v2/directions/foot-walking/geojson",
+      {
+        method: "POST",
+        headers: {
+          Authorization: apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }
+    );
+  }
 
   console.log("[route] ORS response status:", res.status);
   if (!res.ok) {
@@ -1861,21 +1856,22 @@ async function generateDescription(
       messages: [
         {
           role: "system",
-          content: `You generate short route tags for walking routes in Barcelona. Return 3-4 descriptive tags separated by ' · '. Each tag is 1-3 words max. Be specific and sensory. Never mention numbers or scores.
+          content: `You generate short route tags for walking routes in Barcelona. Return 3-4 descriptive tags separated by ' · '. Each tag is 1-3 words max.
+
+Tags should describe the walking EXPERIENCE, not tourist attractions. Use simple, concrete language like: 'well-lit streets', 'tree-lined paths', 'quiet residential streets', 'busy main roads', 'pedestrian zones', 'park paths', 'low noise', 'leafy streets'. Do NOT use promotional language like 'cultural highlights', 'historic lanes', 'cultural lanes', or 'garden paths' — prefer plain route descriptions.
 
 Use the intent and score breakdown to pick relevant tags:
 - High noise_score (quiet): 'quiet streets', 'peaceful', 'low traffic'
-- High green_score (green): 'tree-lined', 'leafy streets', 'garden paths'
-- High cultural_score (cultural): 'historic lanes', 'gallery district', 'Gothic arches'
+- High green_score (green): 'tree-lined', 'leafy streets', 'park paths'
+- High cultural_score (cultural): describe the street type, not attractions — e.g. 'narrow lanes', 'pedestrian streets'
 - High clean_score with others low: don't mention clean, pick something else
-- For discover intent: 'hidden corners', 'local favorites', 'off the beaten path'
-- For nature intent: 'shaded paths', 'park views', 'green canopy'
+- For discover intent: 'quiet streets', 'local streets', 'varied route'
+- For nature intent: 'shaded paths', 'park paths', 'green stretch'
 
 Examples:
-'quiet streets · tree-lined · shaded paths'
-'Gothic arches · hidden corners · vibrant plazas'
-'leafy Eixample · low traffic · garden paths'
-'direct route · through Raval · busy but fast'
+'quiet streets · tree-lined · low traffic'
+'well-lit streets · busy main roads · direct route'
+'leafy stretch · pedestrian zones · low noise'
 
 If nightMode is true, you are generating for an after-dark walk (route may avoid Raval and use La Rambla / well-lit corridors). Include at least one safety-aware tag:
 - 'well-lit streets', 'main roads', 'busy corridors', 'avoids poorly-lit areas', or 'busy, well-lit corridors'

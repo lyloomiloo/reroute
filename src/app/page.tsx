@@ -741,7 +741,7 @@ function PageContent() {
                         <p className="font-mono text-[9px] text-[#4A90D9] mt-2">
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
-                        <div className="mt-3 pt-3 border-t border-gray-100">
+                        <div className="mt-2">
                             {routes.quick && !routes.routes_are_similar && routes.pattern !== "mood_and_area" && (
                               showQuick ? (
                                 <button
@@ -767,7 +767,7 @@ function PageContent() {
                               )
                             )}
                         </div>
-                        <div className="mt-4 flex gap-2">
+                        <div className="mt-3 flex gap-2">
                           {routes.pattern === "mood_and_area" && lastRouteMoodText.trim() && (
                             <button
                               type="button"
