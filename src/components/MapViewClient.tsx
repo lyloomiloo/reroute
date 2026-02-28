@@ -410,6 +410,8 @@ interface MapViewClientProps {
   onUserPositionChange?: (lat: number, lng: number) => void;
   /** When set (e.g. custom FROM location), map flies to this [lat, lng] at zoom 15. When cleared, map flies to center (GPS). */
   flyToCenter?: [number, number] | null;
+  /** When set, show a marker at the custom start location (hidden when route exists or navigating). */
+  customStartCoords?: [number, number] | null;
 }
 
 export default function MapViewClient({
@@ -437,6 +439,7 @@ export default function MapViewClient({
   isLoopRoute = false,
   onUserPositionChange,
   flyToCenter,
+  customStartCoords,
 }: MapViewClientProps) {
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -757,6 +760,19 @@ export default function MapViewClient({
             }
           />
         ))}
+        {customStartCoords && !isNavigating && !routeCoordinates?.length && (
+          <CircleMarker
+            center={[customStartCoords[0], customStartCoords[1]]}
+            radius={10}
+            pathOptions={{
+              color: "#000",
+              weight: 2,
+              fillColor: "#000",
+              fillOpacity: 0.15,
+              className: "custom-start-marker-pulse",
+            }}
+          />
+        )}
         {showUserLocation && userPosition && (
           <Marker
             position={[userPosition.lat, userPosition.lng]}

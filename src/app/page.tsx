@@ -630,6 +630,7 @@ function PageContent() {
                 center={customStart?.coords ?? mapCenter ?? BARCELONA_CENTER}
                 zoom={DEFAULT_ZOOM}
                 flyToCenter={customStart?.coords ?? null}
+                customStartCoords={customStart?.coords ?? null}
               routeCoordinates={
                 routes
                   ? showQuick && routes.quick

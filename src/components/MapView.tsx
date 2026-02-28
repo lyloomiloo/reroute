@@ -45,6 +45,8 @@ interface MapViewProps {
   onUserPositionChange?: (lat: number, lng: number) => void;
   /** When set (e.g. custom FROM location), map flies to this [lat, lng] at zoom 15. When cleared, flies to center (GPS). */
   flyToCenter?: [number, number] | null;
+  /** When set, show a marker at the custom start location (hidden when route exists or navigating). */
+  customStartCoords?: [number, number] | null;
 }
 
 export default function MapView({
@@ -72,6 +74,7 @@ export default function MapView({
   isLoopRoute = false,
   onUserPositionChange,
   flyToCenter,
+  customStartCoords,
 }: MapViewProps) {
   return (
     <div className="absolute inset-0" style={{ zIndex: 1 }}>
@@ -100,6 +103,7 @@ export default function MapView({
         isLoopRoute={isLoopRoute}
         onUserPositionChange={onUserPositionChange}
         flyToCenter={flyToCenter}
+        customStartCoords={customStartCoords}
       />
     </div>
   );
