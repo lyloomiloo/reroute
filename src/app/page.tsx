@@ -116,8 +116,10 @@ function PageContent() {
   const [edgeCaseSuggestion, setEdgeCaseSuggestion] = useState<string | null>(null);
   const [edgeCaseTheme, setEdgeCaseTheme] = useState<string | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
-  /** Last mood text used to fetch current route; used by "Try another" for mood_and_area. */
+  /** Last mood text used to fetch current route; used by "Try another" for mood_and_area and mood_only. */
   const [lastRouteMoodText, setLastRouteMoodText] = useState<string>("");
+  /** Last duration (minutes) used for mood_only route; used by "Try another" to re-request with same duration. */
+  const [lastRouteDurationMinutes, setLastRouteDurationMinutes] = useState<number | null>(null);
   /** Destination POI from place selection (GO); used for pin popup. Cleared when route is dismissed or new search. */
   const [destinationPhoto, setDestinationPhoto] = useState<string | null>(null);
   const [destinationDescription, setDestinationDescription] = useState<string | null>(null);
@@ -245,6 +247,7 @@ function PageContent() {
           clearTimeout(timeout);
           setRoutes(routeResult as RoutesResponse);
           setLastRouteMoodText(text);
+          setLastRouteDurationMinutes(duration);
           setShowQuick(false);
         } else {
           clearTimeout(timeout);
@@ -279,6 +282,7 @@ function PageContent() {
         );
         setRoutes(result as RoutesResponse);
         setLastRouteMoodText(text);
+        setLastRouteDurationMinutes(null);
         setShowQuick(false);
       }
     } catch (err) {
@@ -323,16 +327,28 @@ function PageContent() {
   };
 
   const handleTryAnotherRoute = async () => {
-    if (!lastRouteMoodText.trim() || !routes || routes.pattern !== "mood_and_area") return;
+    if (!lastRouteMoodText.trim() || !routes) return;
+    if (routes.pattern !== "mood_and_area" && routes.pattern !== "mood_only") return;
     setIsLoading(true);
     setRouteError(null);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ROUTE_TIMEOUT_MS);
     try {
-      const result = await getRoute(origin, lastRouteMoodText, { signal: controller.signal, forceNightMode: nightModeOverride });
-      clearTimeout(timeout);
-      if (isEdgeCaseResponse(result) || isDurationPrompt(result) || isPlaceOptionsResponse(result)) return;
-      setRoutes(result as RoutesResponse);
+      if (routes.pattern === "mood_only") {
+        const duration = lastRouteDurationMinutes ?? 30;
+        const routeResult = await getRouteWithDuration(origin, lastRouteMoodText, duration, {
+          signal: controller.signal,
+          forceNightMode: nightModeOverride,
+          retryCount: 1,
+        });
+        clearTimeout(timeout);
+        setRoutes(routeResult);
+      } else {
+        const result = await getRoute(origin, lastRouteMoodText, { signal: controller.signal, forceNightMode: nightModeOverride });
+        clearTimeout(timeout);
+        if (isEdgeCaseResponse(result) || isDurationPrompt(result) || isPlaceOptionsResponse(result)) return;
+        setRoutes(result as RoutesResponse);
+      }
     } catch (err) {
       clearTimeout(timeout);
       const e = err as Error & { name?: string };
@@ -363,6 +379,7 @@ function PageContent() {
       );
       setRoutes(result as RoutesResponse);
       setLastRouteMoodText(moodInput);
+      setLastRouteDurationMinutes(minutes);
       setShowQuick(false);
     } catch (err) {
       console.error("Route error:", err);
@@ -639,11 +656,21 @@ function PageContent() {
                   : undefined
               }
               alternativeRouteCoordinates={
-                routes?.quick && !routes.routes_are_similar && routes.pattern !== "mood_and_area"
-                  ? showQuick
-                    ? routes.recommended.coordinates
-                    : routes.quick.coordinates
-                  : null
+                (() => {
+                  const alt = routes?.quick;
+                  const main = routes?.recommended;
+                  const showAlternative =
+                    alt &&
+                    main &&
+                    routes.pattern !== "mood_and_area" &&
+                    Math.abs(alt.duration - main.duration) > 120 &&
+                    Math.abs(alt.distance - main.distance) > 200;
+                  return showAlternative
+                    ? showQuick
+                      ? main.coordinates
+                      : alt.coordinates
+                    : null;
+                })()
               }
               highlights={routes ? (showQuick && routes.quick ? routes.quick.highlights : routes.recommended.highlights) : undefined}
               endPoint={routes?.end_point}
@@ -744,34 +771,44 @@ function PageContent() {
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
                         <div className="mt-4">
-                            {routes.quick && !routes.routes_are_similar && routes.pattern !== "mood_and_area" && (
-                              <div className="mb-2">
-                                {showQuick ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowQuick(false)}
-                                    className="text-base text-gray-600 underline reroute-uppercase"
-                                  >
-                                    {routes.default_is_fastest ? "Use fastest route" : getUseRouteLabel(routes.intent)}
-                                  </button>
-                                ) : (
-                                  <p className="text-base text-gray-500 reroute-uppercase">
-                                    {routes.default_is_fastest
-                                      ? `${getIntentRouteLabel(routes.intent)}: ${formatDuration(routes.quick.duration)} — `
-                                      : `Fastest route: ${formatDuration(routes.quick.duration)} — `}
+                            {(() => {
+                              const alt = routes.quick;
+                              const main = routes.recommended;
+                              const showAlternative =
+                                alt &&
+                                main &&
+                                routes.pattern !== "mood_and_area" &&
+                                Math.abs(alt.duration - main.duration) > 120 &&
+                                Math.abs(alt.distance - main.distance) > 200;
+                              return showAlternative ? (
+                                <div className="mb-2">
+                                  {showQuick ? (
                                     <button
                                       type="button"
-                                      onClick={() => setShowQuick(true)}
-                                      className="text-foreground underline"
+                                      onClick={() => setShowQuick(false)}
+                                      className="text-base text-gray-600 underline reroute-uppercase"
                                     >
-                                      Switch
+                                      {routes.default_is_fastest ? "Use fastest route" : getUseRouteLabel(routes.intent)}
                                     </button>
-                                  </p>
-                                )}
-                              </div>
-                            )}
+                                  ) : (
+                                    <p className="text-base text-gray-500 reroute-uppercase">
+                                      {routes.default_is_fastest
+                                        ? `${getIntentRouteLabel(routes.intent)}: ${formatDuration(routes.quick.duration)} — `
+                                        : `Fastest route: ${formatDuration(routes.quick.duration)} — `}
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowQuick(true)}
+                                        className="text-foreground underline"
+                                      >
+                                        Switch
+                                      </button>
+                                    </p>
+                                  )}
+                                </div>
+                              ) : null;
+                            })()}
                             <div className="flex gap-2">
-                              {routes.pattern === "mood_and_area" && lastRouteMoodText.trim() && (
+                              {(routes.pattern === "mood_and_area" || routes.pattern === "mood_only") && lastRouteMoodText.trim() && (
                             <button
                               type="button"
                               onClick={handleTryAnotherRoute}

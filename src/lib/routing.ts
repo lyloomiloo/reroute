@@ -144,9 +144,9 @@ export async function getRoute(
   });
 
   if (!res.ok) {
-    if (res.status === 400) throw new Error(ROUTE_NOT_FOUND_MSG);
     const err = await res.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(err.error || `Route API error: ${res.status}`);
+    const message = res.status === 400 && err?.error ? err.error : res.status === 400 ? ROUTE_NOT_FOUND_MSG : err.error || `Route API error: ${res.status}`;
+    throw new Error(message);
   }
 
   const data = await res.json();
@@ -161,9 +161,9 @@ export async function getRoute(
   }
   if (data.needs_duration === true) {
     const defaultOptions = [
-      { label: "5-15 min", value: 10 },
-      { label: "15-30 min", value: 22 },
-      { label: "30 min - 1 hr", value: 45 },
+      { label: "5 – 15 min", value: 10 },
+      { label: "15 – 45 min", value: 30 },
+      { label: "30 min – 1.5 hrs", value: 60 },
       { label: "Surprise me", value: 0 },
     ];
     return {
@@ -198,7 +198,7 @@ export async function getRouteWithDuration(
   origin: [number, number],
   moodText: string,
   durationMinutes: number,
-  options?: { signal?: AbortSignal; forceNightMode?: boolean }
+  options?: { signal?: AbortSignal; forceNightMode?: boolean; retryCount?: number }
 ): Promise<RoutesResponse> {
   const body: Record<string, unknown> = {
     origin,
@@ -206,6 +206,7 @@ export async function getRouteWithDuration(
     duration: durationMinutes,
   };
   if (options?.forceNightMode === true) body.forceNightMode = true;
+  if (typeof options?.retryCount === "number") body.retry_count = options.retryCount;
 
   const res = await fetch("/api/route", {
     method: "POST",
@@ -215,9 +216,9 @@ export async function getRouteWithDuration(
   });
 
   if (!res.ok) {
-    if (res.status === 400) throw new Error(ROUTE_NOT_FOUND_MSG);
     const err = await res.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(err.error || `Route API error: ${res.status}`);
+    const message = res.status === 400 && err?.error ? err.error : res.status === 400 ? ROUTE_NOT_FOUND_MSG : err.error || `Route API error: ${res.status}`;
+    throw new Error(message);
   }
 
   const data = await res.json();

@@ -266,6 +266,44 @@ function distMeters(a: [number, number], b: [number, number]): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+/** Perpendicular distance from point to line segment (in degree units). */
+function perpendicularDistance(
+  point: [number, number],
+  lineStart: [number, number],
+  lineEnd: [number, number]
+): number {
+  const [px, py] = point;
+  const [ax, ay] = lineStart;
+  const [bx, by] = lineEnd;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len === 0) return Math.sqrt((px - ax) ** 2 + (py - ay) ** 2);
+  return Math.abs(dx * (ay - py) - (ax - px) * dy) / len;
+}
+
+/** Douglas–Peucker simplification for display; keeps original for distance/time. Tolerance in degrees (~0.00008 ≈ 8m). */
+function simplifyRoute(coords: [number, number][], tolerance: number = 0.00008): [number, number][] {
+  if (coords.length < 3) return coords;
+  let maxDist = 0;
+  let maxIndex = 0;
+  const start = coords[0];
+  const end = coords[coords.length - 1];
+  for (let i = 1; i < coords.length - 1; i++) {
+    const dist = perpendicularDistance(coords[i], start, end);
+    if (dist > maxDist) {
+      maxDist = dist;
+      maxIndex = i;
+    }
+  }
+  if (maxDist > tolerance) {
+    const left = simplifyRoute(coords.slice(0, maxIndex + 1), tolerance);
+    const right = simplifyRoute(coords.slice(maxIndex), tolerance);
+    return [...left.slice(0, -1), ...right];
+  }
+  return [start, end];
+}
+
 /** Scale POI count by route distance (ORS distance in meters). When poi_focus is true, caller uses 5–8. */
 function maxPoisFromRouteDistance(distanceM: number): number {
   if (distanceM < 1000) return 2;   // Under 1km: 1–2 POIs
@@ -1017,6 +1055,8 @@ export interface ParsedMoodRequest {
   skip_duration?: boolean;
   /** true when user explicitly asked for a loop (e.g. "30 min loop", "round walk"). When true + duration specified, we still show duration picker. */
   is_loop?: boolean;
+  /** true when user wants to "get lost", "wander", "no plan" — pick a completely random direction/destination. */
+  is_surprise?: boolean;
 }
 
 async function parseMoodRequest(userInput: string): Promise<ParsedMoodRequest> {
@@ -1053,7 +1093,8 @@ Format:
   "poi_focus": true or false,
   "poi_search_terms": ["array", "of", "search", "terms"] or [],
   "skip_duration": true or false,
-  "is_loop": true or false
+  "is_loop": true or false,
+  "is_surprise": true or false
 }
 
 skip_duration: Set to true when the user says "surprise me" or equivalent (random walk, surprise me, pick for me). When true, the app will skip the duration picker and auto-select a duration. Set to false otherwise.
@@ -1078,6 +1119,7 @@ IMPORTANT CLASSIFICATION RULES:
 - 'restaurant' IS a place type. "Something active outdoors", "hike", "trail", "workout walk" get mood_and_poi with outdoor poi_query so the user gets a destination first (not duration picker).
 - 'show me something I've never seen' is mood_only, not mood_and_poi.
 - 'surprise me' is mood_only.
+- "get lost", "get lost for a bit", "lose myself", "wander", "no plan", "just walk", "I want to get lost" → mood_only, intent discover, is_surprise: true, skip_duration: true. Treat as randomised/surprise walk; the app will pick a random direction and destination.
 
 - KEY: Does the user name a SPECIFIC PLACE (e.g. Sagrada Familia, Gràcia, Barceloneta) or just a VIBE/THEME (e.g. "architecture", "scenic", "calm by the beach")? If it's a vibe or theme with NO named place → mood_only (we will ask for duration). If they name a specific place or area → has destination (mood_and_destination or mood_and_area).
 - Open-ended vibe/theme with no specific destination → mood_only: "scenic walk", "peaceful stroll", "pretty route" = mood_only (no POI, no destination; we ask duration). Exception: "architecture hunt", "architecture walk", "see cool buildings" → themed_walk (see architecture rule below).
@@ -1092,7 +1134,7 @@ IMPORTANT CLASSIFICATION RULES:
 - 'cafe hopping' = themed_walk (walk past multiple cafes)
 - 'food hunt' = themed_walk
 - 'architecture trail' = themed_walk
-- 'surprise me' = mood_only with discover intent. Also set skip_duration: true so the duration picker is skipped.
+- 'surprise me' = mood_only with discover intent, is_surprise: true. Also set skip_duration: true so the duration picker is skipped.
 
 Destination vs walk feeling: If the user describes an ACTIVITY or PLACE TYPE they want to visit (e.g., "something active indoors", "a cozy bookshop", "live music"), classify as mood_and_poi and generate a poi_query for Google Places. The intent should describe the WALK to get there (e.g., scenic, calm, quick), not the activity itself. "I want a calm walk" = mood_only with intent calm (no POI). "Something active indoors" = mood_and_poi with poi_query like "indoor activities Barcelona" or "climbing gym Barcelona", intent e.g. quick or calm for the walk.
 - NAMED HIKING AREA TAKES PRIORITY: When the user names a known hiking/nature area (Montjuïc, Tibidabo, Collserola, El Carmel, Carmel) plus "hike", "walk", or "trail" (e.g. "Montjuïc hike", "monjuic hike", "Tibidabo walk", "Collserola trail"), ALWAYS use mood_and_area with that area and intent nature — NOT mood_and_poi. The app uses curated waypoints for these areas; do not return place_options.
@@ -1129,8 +1171,8 @@ Intent mapping rules:
 - discover/explore: "show me something new", "surprise me", "explore", "hidden gems"
 - scenic/beautiful: "pretty walk", "nice route", "beautiful streets", "scenic". romantic, date night, evening stroll → intent: scenic (quiet, beautiful streets — not busy/loud)
 - nature/green: "parks", "trees", "fresh air", "garden", "beach"
-- lively/buzzy: "energy", "vibrant", "bustling", "lively neighborhood"
-- exercise/steps: "long walk", "hilly", "workout walk". "something active outdoors", "active outdoors", "outdoor exercise", "hike", "trail" (when no named hiking area) → mood_and_poi with intent exercise, poi_query "Montjuïc park hiking trail viewpoint Barcelona". "Montjuïc hike", "Tibidabo walk", "Collserola trail" etc. → mood_and_area (see NAMED HIKING AREA rule). "go for a run", "running route", "jog", "get my steps in" → mood_only with intent exercise (duration-based loop).
+- lively/buzzy: "energy", "vibrant", "bustling", "lively neighborhood", "good vibes", "vibes". "energetic walk with good vibes" → intent lively (social/vibe) or exercise (physical); prefer exercise if "workout"/"steps" present, else lively.
+- exercise/steps: "long walk", "hilly", "workout walk", "energetic", "energetic walk". "something active outdoors", "active outdoors", "outdoor exercise", "hike", "trail" (when no named hiking area) → mood_and_poi with intent exercise, poi_query "Montjuïc park hiking trail viewpoint Barcelona". "Montjuïc hike", "Tibidabo walk", "Collserola trail" etc. → mood_and_area (see NAMED HIKING AREA rule). "go for a run", "running route", "jog", "get my steps in" → mood_only with intent exercise (duration-based loop).
 - cafe/food: "cafe", "coffee", "matcha", "food", "restaurant", "tapas", "brunch"
 - quick: "fast", "direct", "hurry", "late", "shortest", "efficient", "rush", "in a rush", "rushing", "urgent", "emergency", "asap", "quickly", "running late", "need to be there", "don't want to be late", "appointment"
 - URGENCY OVERRIDE: If the user expresses urgency, time pressure, or uses words like "rush", "hurry", "late", "emergency", "urgent", "asap", or mentions a time constraint like "I need to be there by 3", ALWAYS set intent to "quick" regardless of other mood words. Urgency beats mood. "I'm in a rush to the hospital" = intent quick, NOT calm or scenic.
@@ -1138,6 +1180,7 @@ Intent mapping rules:
 - TIME-AWARE QUERIES: When the user mentions time of day or night, adjust intent accordingly. "late night walk" → intent calm (quiet, well-lit streets preferred). "late night walk, feeling unsafe" → intent calm, theme_name "night_safety". "evening stroll" → intent scenic. "morning walk" → intent nature. "sunrise walk" → intent nature. The app applies after-dark safety weighting automatically based on actual time — the LLM just sets the right mood intent. If the user explicitly mentions feeling unsafe at night, set theme_name to "night_safety" so the app can add extra reassurance.
 
 Examples:
+- "energetic walk with good vibes" → mood_only, intent: lively or exercise (no destination; user wants vibe/energy).
 - "walk to hospital clinic, I'm in a rush" → intent: quick, pattern: mood_and_destination, destination: "Hospital Clínic"
 - "get me to ELISAVA fast" → intent: quick, pattern: mood_and_destination
 - "quick but nice walk to ELISAVA" → intent: scenic, pattern: mood_and_destination
@@ -1227,6 +1270,7 @@ If no mood is detectable, default intent to 'calm' for wandering or 'quick' for 
       poi_search_terms: [],
       skip_duration: false,
       is_loop: false,
+      is_surprise: false,
     };
   }
   const rawSuggested =
@@ -1264,6 +1308,7 @@ If no mood is detectable, default intent to 'calm' for wandering or 'quick' for 
     ? (parsed.poi_search_terms as string[]).filter((t) => typeof t === "string" && t.trim() !== "")
     : [];
   const isLoop = parsed.is_loop === true;
+  const is_surprise = parsed.is_surprise === true;
 
   return {
     intent: INTENTS.includes(parsed.intent as Intent) ? (parsed.intent as Intent) : "calm",
@@ -1280,6 +1325,7 @@ If no mood is detectable, default intent to 'calm' for wandering or 'quick' for 
     poi_search_terms: poi_search_terms,
     skip_duration: parsed.skip_duration === true,
     is_loop: isLoop,
+    is_surprise: is_surprise,
   };
 }
 
@@ -1834,7 +1880,8 @@ async function generateDescription(
   duration: number,
   distance: number,
   destinationName?: string | null,
-  nightMode?: boolean
+  nightMode?: boolean,
+  discoveryRouteOptions?: { highlightTypesOrNames?: string[] }
 ): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not set");
@@ -1842,6 +1889,28 @@ async function generateDescription(
   let userMessage = `Intent: ${intent}. Breakdown: noise=${breakdown.noise}, green=${breakdown.green}, clean=${breakdown.clean}, cultural=${breakdown.cultural}. Duration seconds: ${duration}. Distance meters: ${distance}.`;
   if (destinationName) userMessage += ` Destination: ${destinationName}.`;
   if (nightMode) userMessage += " Night mode: true — generating tags for an after-dark walk; route may be rerouted via well-lit corridors (e.g. La Rambla). Prefer tags like 'avoids poorly-lit areas' or 'busy, well-lit corridors'.";
+  if (discoveryRouteOptions?.highlightTypesOrNames?.length) {
+    userMessage += ` POIs/types along the route (mention 1-2): ${discoveryRouteOptions.highlightTypesOrNames.slice(0, 6).join(", ")}.`;
+  }
+
+  const isDiscoveryWithDestination =
+    (intent === "discover" || intent === "scenic" || intent === "lively") && !!destinationName;
+  const discoveryInstruction = isDiscoveryWithDestination
+    ? `
+
+DISCOVERY ROUTE WITH DESTINATION: This route goes to a specific place. Describe what the user will FIND, not just street qualities.
+- Include the destination name or area (e.g. "Towards the waterfront", "Heads to Gothic Quarter", "Towards Park Güell").
+- Mention 1-2 interesting things along the way (e.g. "passes hidden plazas", "street art", "local shops", "narrow medieval lanes", "neighbourhood cafes").
+- Do NOT give a generic list like "quiet streets · leafy streets · local streets" — say what makes this walk interesting and where it goes.
+
+Good examples:
+'Towards the waterfront · passes hidden plazas · local shops'
+'Heads to Gothic Quarter · street art · narrow medieval lanes'
+'Towards Park Güell · uphill climb · neighbourhood cafes'
+
+Bad (too generic):
+'Quiet streets · leafy streets · local streets'`
+    : "";
 
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -1872,6 +1941,7 @@ Examples:
 'quiet streets · tree-lined · low traffic'
 'well-lit streets · busy main roads · direct route'
 'leafy stretch · pedestrian zones · low noise'
+${discoveryInstruction}
 
 If nightMode is true, you are generating for an after-dark walk (route may avoid Raval and use La Rambla / well-lit corridors). Include at least one safety-aware tag:
 - 'well-lit streets', 'main roads', 'busy corridors', 'avoids poorly-lit areas', or 'busy, well-lit corridors'
@@ -2200,6 +2270,9 @@ function getFallbackCoordsForDestination(name: string): [number, number] | null 
 const BCN_BBOX_VALIDATION = { minLat: 41.30, maxLat: 41.50, minLng: 2.03, maxLng: 2.25 };
 const MAX_ROUTE_DURATION_MIN = 360;
 const MAX_ROUTE_DISTANCE_M = 20000;
+/** Routes over these limits are never returned to the frontend. */
+const FRONTEND_MAX_DURATION_MIN = 120;
+const FRONTEND_MAX_DISTANCE_M = 15000;
 const MAX_WAYPOINT_DISTANCE_M = 3000;
 
 /** Port Vell / water area — waypoints here are over the sea. Exclude from boundary selection. */
@@ -2259,6 +2332,7 @@ export async function POST(req: NextRequest) {
       destination_place_type: bodyDestinationPlaceType,
       search_offset: searchOffset,
       forceNightMode: bodyForceNightMode,
+      retry_count: retryCount,
     } = body;
 
     if (!origin || !Array.isArray(origin) || origin.length < 2) {
@@ -2289,6 +2363,7 @@ export async function POST(req: NextRequest) {
     let poi_search_terms: string[] = [];
     let skipDuration = false;
     let isLoop = false;
+    let isSurprise = false;
     let parsedArea: string | null = null;
     let parsedPoiQuery: string | null = null;
     let parsedThemeName: string | null = null;
@@ -2333,6 +2408,7 @@ export async function POST(req: NextRequest) {
         poi_search_terms = parsed.poi_search_terms ?? [];
         skipDuration = parsed.skip_duration === true;
         isLoop = parsed.is_loop === true;
+        isSurprise = parsed.is_surprise === true;
         parsedArea = parsed.area ?? null;
         parsedPoiQuery = parsed.poi_query ?? null;
         parsedThemeName = parsed.theme_name ?? null;
@@ -2600,6 +2676,7 @@ export async function POST(req: NextRequest) {
     /** Avoid unsafe zones for night mode AND emotional_support (vulnerable walks). */
     const forceAvoidZones = isNight || isEmotionalSupport;
 
+    const DEFAULT_MOOD_ONLY_DURATION = 25;
     const isSurpriseMe = typeof durationMinutes === "number" && durationMinutes === 0;
     const durationFromBody =
       typeof durationMinutes === "number" && durationMinutes > 0 ? Math.round(durationMinutes) : null;
@@ -2608,14 +2685,17 @@ export async function POST(req: NextRequest) {
         ? (targetDistanceKm * 1000) / WALK_SPEED_M_PER_MIN
         : null;
     let effectiveDuration =
-      isSurpriseMe ? 15 + Math.floor(Math.random() * 166) : durationFromBody ?? suggestedDuration ?? durationFromDistance;
-    // Use LLM-parsed duration if provided (e.g. "20 minutes, don't care where")
+      isSurpriseMe
+        ? 25 + Math.floor(Math.random() * 21)
+        : durationFromBody ?? suggestedDuration ?? durationFromDistance;
     if (suggestedDuration != null && effectiveDuration == null) {
       effectiveDuration = suggestedDuration;
     }
-    // Area exploration generates its own duration from POI count and spacing — skip duration picker
     if (pattern === "mood_and_area" && effectiveDuration == null) {
       effectiveDuration = 45;
+    }
+    if (pattern === "mood_only" && effectiveDuration == null) {
+      effectiveDuration = DEFAULT_MOOD_ONLY_DURATION;
     }
 
     // When no destination (or mood_only): ask for duration unless we have one. If LLM already set suggested_duration (e.g. "30 min loop"), use it and skip picker. mood_and_area is excluded — it uses a default above.
@@ -2636,9 +2716,9 @@ export async function POST(req: NextRequest) {
 
     if (mustAskDuration) {
       const durationOptions = [
-        { label: "5-15 min", value: 10 },
-        { label: "15-30 min", value: 22 },
-        { label: "30 min - 1 hr", value: 45 },
+        { label: "5 – 15 min", value: 10 },
+        { label: "15 – 45 min", value: 30 },
+        { label: "30 min – 1.5 hrs", value: 60 },
         { label: "Surprise me", value: 0 },
       ];
       if (skipDuration) {
@@ -3169,10 +3249,16 @@ export async function POST(req: NextRequest) {
     }
 
     if (pattern === "mood_only") {
-      // Duration-based mood_only with no destination → treat as loop (e.g. "30 min calm walk")
-      if (effectiveDuration != null && effectiveDuration > 0) {
-        isLoop = true;
-      }
+      const LOOP_INTENTS: Intent[] = ["nature", "calm", "exercise"];
+      isLoop = isSurprise
+        ? false
+        : LOOP_INTENTS.includes(intent as Intent)
+          ? true
+          : intent === "discover" && skipDuration
+            ? Math.random() < 0.5
+            : false;
+      const duration = effectiveDuration ?? 25;
+      console.log("[route] MOOD_ONLY:", { intent, duration, isLoop });
       const { index } = await loadStreetData();
       // When loop + area (e.g. "Tibidabo walk"), start the loop from the area center so the route stays in that area
       let loopOrigin: [number, number] = [...originCoords];
@@ -3199,21 +3285,29 @@ export async function POST(req: NextRequest) {
       let destination_address: string | null = null;
       type RouteSegment = { coordinates: [number, number][]; duration: number; distance: number };
       let oneWayRoute: RouteSegment | null = null;
-      const namedDest = await findMoodOnlyDestination(
-        loopOrigin[0],
-        loopOrigin[1],
-        intent as Intent,
-        isLoop ? effectiveDuration! / 2 : effectiveDuration!
-      );
+      const namedDest =
+        !isLoop && !isSurprise
+          ? await findMoodOnlyDestination(
+              loopOrigin[0],
+              loopOrigin[1],
+              intent as Intent,
+              effectiveDuration!
+            )
+          : null;
       if (namedDest) {
         waypoint = [namedDest.lat, namedDest.lng];
         destination_name = namedDest.name;
         destination_address = namedDest.description;
+      } else if (isSurprise) {
+        const outboundM = effectiveDuration! * 80;
+        const bearingOffset = typeof retryCount === "number" ? retryCount * 111 : 0;
+        waypoint = waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, (Math.random() * 360 + bearingOffset) % 360);
       } else if (isLoop) {
         const outboundM = (effectiveDuration! * 80) / 2;
+        const bearingOffset = typeof retryCount === "number" ? retryCount * 111 : 0;
         let best: { route: RouteSegment; wp: [number, number]; score: number } | null = null;
         for (let attempt = 0; attempt < 3; attempt++) {
-          const bearing = Math.random() * 360;
+          const bearing = (Math.random() * 360 + bearingOffset) % 360;
           const wp = waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, bearing);
           try {
             const outRoutes = await fetchOrsRoutes(loopOrigin, wp, intent, forceAvoidZones);
@@ -3248,21 +3342,114 @@ export async function POST(req: NextRequest) {
           );
         }
       } else {
-        const boundary = await fetchIsochrone(loopOrigin[0], loopOrigin[1], fullDurationSeconds);
-        waypoint = pickWaypointFromBoundary(
-          intent,
-          boundary,
-          loopOrigin[0],
-          loopOrigin[1],
-          index,
-          MAX_ROUTE_DISTANCE_M,
-          null
-        );
+        if (intent === "discover" && !namedDest) {
+          const outboundM = effectiveDuration! * 80;
+          const bearingOffset = typeof retryCount === "number" ? retryCount * 111 : 0;
+          waypoint = waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, (Math.random() * 360 + bearingOffset) % 360);
+        } else {
+          const boundary = await fetchIsochrone(loopOrigin[0], loopOrigin[1], fullDurationSeconds);
+          waypoint = pickWaypointFromBoundary(
+            intent,
+            boundary,
+            loopOrigin[0],
+            loopOrigin[1],
+            index,
+            MAX_ROUTE_DISTANCE_M,
+            null
+          );
+        }
       }
       if (!oneWayRoute) {
-        const orsRoutes = await fetchOrsRoutes(loopOrigin, waypoint, intent, forceAvoidZones);
+        let orsRoutes = await fetchOrsRoutes(loopOrigin, waypoint, intent, forceAvoidZones);
         oneWayRoute = orsRoutes[0] ?? null;
-        if (!oneWayRoute) throw new Error("No one-way route from ORS");
+        if (!oneWayRoute) {
+          // Retry once with a different waypoint before failing
+          let retryWaypoint: [number, number] | null = null;
+          if (isLoop) {
+            const outboundM = (effectiveDuration! * 80) / 2;
+            retryWaypoint = waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, (Math.random() * 360 + 200) % 360);
+          } else {
+            try {
+              const boundary = await fetchIsochrone(loopOrigin[0], loopOrigin[1], fullDurationSeconds);
+              retryWaypoint = pickWaypointFromBoundary(
+                intent as Intent,
+                boundary,
+                loopOrigin[0],
+                loopOrigin[1],
+                index,
+                MAX_ROUTE_DISTANCE_M,
+                null
+              );
+            } catch {
+              retryWaypoint = null;
+            }
+          }
+          if (retryWaypoint) {
+            orsRoutes = await fetchOrsRoutes(loopOrigin, retryWaypoint, intent, forceAvoidZones);
+            oneWayRoute = orsRoutes[0] ?? null;
+            if (oneWayRoute) waypoint = retryWaypoint;
+          }
+        }
+        if (!oneWayRoute) {
+          if (effectiveDuration != null && effectiveDuration < 20) {
+            return NextResponse.json(
+              { error: "That's a bit too short for a route — try 15+ minutes." },
+              { status: 400 }
+            );
+          }
+          // mood_only: never fail — fall back to loop route
+          console.log("[route] One-way mood_only failed, falling back to loop route");
+          isLoop = true;
+          const outboundM = (effectiveDuration! * 80) / 2;
+          const bearingOffset = typeof retryCount === "number" ? retryCount * 111 : 0;
+          let loopBest: { route: RouteSegment; wp: [number, number]; score: number } | null = null;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const bearing = (Math.random() * 360 + bearingOffset) % 360;
+            const wp = waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, bearing);
+            try {
+              const outRoutes = await fetchOrsRoutes(loopOrigin, wp, intent, forceAvoidZones);
+              if (!outRoutes[0]) continue;
+              const returnOffset = offsetPerpendicular(wp[0], wp[1], loopOrigin[0], loopOrigin[1], 200);
+              const returnRoute = await fetchOrsWaypointRoute(wp, [returnOffset, loopOrigin], intent, forceAvoidZones);
+              const loopCoords = [...outRoutes[0].coordinates, ...returnRoute.coordinates.slice(1)] as [number, number][];
+              const combined: RouteSegment = {
+                coordinates: loopCoords,
+                duration: outRoutes[0].duration + returnRoute.duration,
+                distance: outRoutes[0].distance + returnRoute.distance,
+              };
+              const { score } = scoreRoute(combined.coordinates, intent, index);
+              if (!loopBest || score > loopBest.score) loopBest = { route: combined, wp, score };
+            } catch {
+              continue;
+            }
+          }
+          if (loopBest) {
+            oneWayRoute = loopBest.route;
+            waypoint = loopBest.wp;
+          } else {
+            const boundary = await fetchIsochrone(loopOrigin[0], loopOrigin[1], fullDurationSeconds);
+            waypoint = pickWaypointFromBoundary(
+              intent as Intent,
+              boundary,
+              loopOrigin[0],
+              loopOrigin[1],
+              index,
+              MAX_ROUTE_DISTANCE_M,
+              null
+            );
+            const orsRoutes = await fetchOrsRoutes(loopOrigin, waypoint, intent, forceAvoidZones);
+            oneWayRoute = orsRoutes[0] ?? null;
+            if (oneWayRoute) {
+              const returnOffset = offsetPerpendicular(waypoint[0], waypoint[1], loopOrigin[0], loopOrigin[1], 200);
+              const returnRoute = await fetchOrsWaypointRoute(waypoint, [returnOffset, loopOrigin], intent, forceAvoidZones);
+              oneWayRoute = {
+                coordinates: [...oneWayRoute.coordinates, ...returnRoute.coordinates.slice(1)] as [number, number][],
+                duration: oneWayRoute.duration + returnRoute.duration,
+                distance: oneWayRoute.distance + returnRoute.distance,
+              };
+            }
+          }
+        }
         if (isLoop) {
           const returnOffset = offsetPerpendicular(waypoint[0], waypoint[1], loopOrigin[0], loopOrigin[1], 200);
           const returnRoute = await fetchOrsWaypointRoute(waypoint, [returnOffset, loopOrigin], intent, forceAvoidZones);
@@ -3274,6 +3461,25 @@ export async function POST(req: NextRequest) {
             distance: oneWayRoute.distance + returnRoute.distance,
           };
         }
+      }
+      const requestedMinutes = effectiveDuration ?? 30;
+      const isDiscoverOrSurprise = intent === "discover" || isSurprise;
+      const maxAcceptableMinutes = isDiscoverOrSurprise ? requestedMinutes * 2 : requestedMinutes * 1.5;
+      const routeMinutes = oneWayRoute.duration / 60;
+      if (routeMinutes > maxAcceptableMinutes) {
+        return NextResponse.json(
+          { error: "Couldn't find a route that fits your time. Try a longer duration." },
+          { status: 400 }
+        );
+      }
+      if (
+        oneWayRoute.duration > FRONTEND_MAX_DURATION_MIN * 60 ||
+        oneWayRoute.distance > FRONTEND_MAX_DISTANCE_M
+      ) {
+        return NextResponse.json(
+          { error: "Couldn't find a route that fits your time. Try a longer duration." },
+          { status: 400 }
+        );
       }
       const { score, breakdown, tags } = scoreRoute(oneWayRoute.coordinates, intent, index);
       const poiPoints = loadPoiData();
@@ -3318,14 +3524,31 @@ export async function POST(req: NextRequest) {
       let summary = buildSummary(oneWayRoute.duration, oneWayRoute.distance, tags, intent, isNight);
       try {
         const destLabel = destination_name ?? null;
-        const desc = await generateDescription(intent, breakdown, oneWayRoute.duration, oneWayRoute.distance, destLabel, isNight);
+        const discoveryOptions =
+          !isLoop && destLabel && (intent === "discover" || intent === "scenic" || intent === "lively")
+            ? {
+                highlightTypesOrNames: highlights
+                  .map((h) => (h.type && h.type !== "destination" ? h.type : h.name ?? "").trim())
+                  .filter(Boolean)
+                  .slice(0, 6),
+              }
+            : undefined;
+        const desc = await generateDescription(
+          intent,
+          breakdown,
+          oneWayRoute.duration,
+          oneWayRoute.distance,
+          destLabel,
+          isNight,
+          discoveryOptions
+        );
         if (desc) summary = desc;
       } catch {
         // keep template
       }
       if (isEmotionalSupport && summary) summary = softenSummaryForEmotionalSupport(summary);
       const oneWayResult = {
-        coordinates: oneWayRoute.coordinates,
+        coordinates: simplifyRoute(oneWayRoute.coordinates, 0.00008),
         duration: oneWayRoute.duration,
         distance: oneWayRoute.distance,
         score,
@@ -3564,7 +3787,7 @@ export async function POST(req: NextRequest) {
     );
 
     const recommendedPayload = {
-      coordinates: recommended.coordinates,
+      coordinates: simplifyRoute(recommended.coordinates, 0.00008),
       duration: recDuration,
       distance: recDistance,
       summary: recommendedSummary,
@@ -3573,7 +3796,7 @@ export async function POST(req: NextRequest) {
       highlights: recommendedHighlights,
     };
     const quickPayload = {
-      coordinates: quick.coordinates,
+      coordinates: simplifyRoute(quick.coordinates, 0.00008),
       duration: qDuration,
       distance: qDistance,
       summary: quickSummary,
