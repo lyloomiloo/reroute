@@ -376,6 +376,8 @@ interface MapViewClientProps {
   onRemainingUpdate?: (data: { distance: string; time: string }) => void;
   /** Called when user is within 30m of the route end (arrival). */
   onArrived?: () => void;
+  /** When true (loop routes), arrival is only triggered after traveling at least 70% of the route. */
+  isLoopRoute?: boolean;
 }
 
 export default function MapViewClient({
@@ -400,6 +402,7 @@ export default function MapViewClient({
   initialNavCenter,
   onRemainingUpdate,
   onArrived,
+  isLoopRoute = false,
 }: MapViewClientProps) {
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -455,10 +458,14 @@ export default function MapViewClient({
     });
     const lastCoord = coords[coords.length - 1];
     const distToEnd = getDistance(userPosition.lat, userPosition.lng, lastCoord[1], lastCoord[0]);
-    if (distToEnd < 30 && onArrived) {
+    const totalRouteMeters = calculateRouteDistance(coords);
+    const distanceTraveled = totalRouteMeters > 0 ? totalRouteMeters - remainingMeters : 0;
+    const progressPercent = totalRouteMeters > 0 ? distanceTraveled / totalRouteMeters : 0;
+    const canArrive = isLoopRoute ? progressPercent >= 0.7 : true;
+    if (canArrive && distToEnd < 30 && onArrived) {
       onArrived();
     }
-  }, [isNavigating, userPosition?.lat, userPosition?.lng, routeCoordinates, onRemainingUpdate, onArrived]);
+  }, [isNavigating, userPosition?.lat, userPosition?.lng, routeCoordinates, onRemainingUpdate, onArrived, isLoopRoute]);
 
   // Proximity check: when user is within 50m of an unseen POI, show toast and mark seen
   useEffect(() => {

@@ -83,58 +83,8 @@ function isAfterDarkInBarcelona(): boolean {
 }
 
 // =============================================================
-// NIGHT SAFE CORRIDORS — avoid Raval interior, route via main streets
+// NIGHT SAFE CORRIDORS — reroute through well-lit busy streets
 // =============================================================
-/** Raval avoid polygon for ORS avoid_polygons (GeoJSON). Coordinates [lng, lat]. */
-const RAVAL_AVOID_POLYGON = {
-  type: "Polygon" as const,
-  coordinates: [[
-    [2.1665, 41.3780],
-    [2.1745, 41.3800],
-    [2.1760, 41.3730],
-    [2.1680, 41.3720],
-    [2.1665, 41.3780],
-  ]],
-};
-
-const RAVAL_BOUNDS = {
-  north: 41.3810,
-  south: 41.3715,
-  west: 2.1660,
-  east: 2.1765,
-};
-
-function isInsideRaval(lat: number, lng: number): boolean {
-  return (
-    lat >= RAVAL_BOUNDS.south &&
-    lat <= RAVAL_BOUNDS.north &&
-    lng >= RAVAL_BOUNDS.west &&
-    lng <= RAVAL_BOUNDS.east
-  );
-}
-
-/** Safe exit points on main streets (La Rambla, Paral·lel) for night mode. */
-const SAFE_CORRIDOR_POINTS = [
-  { name: "La Rambla (top)", lat: 41.3800, lng: 2.1735 },
-  { name: "La Rambla (mid)", lat: 41.3770, lng: 2.1740 },
-  { name: "La Rambla (bottom)", lat: 41.3740, lng: 2.1750 },
-  { name: "Paral·lel (west)", lat: 41.3735, lng: 2.1685 },
-  { name: "Paral·lel (east)", lat: 41.3730, lng: 2.1720 },
-];
-
-function findNearestSafeCorridor(lat: number, lng: number): [number, number] {
-  let best = SAFE_CORRIDOR_POINTS[0];
-  let bestDist = Infinity;
-  for (const p of SAFE_CORRIDOR_POINTS) {
-    const d = (p.lat - lat) ** 2 + (p.lng - lng) ** 2;
-    if (d < bestDist) {
-      bestDist = d;
-      best = p;
-    }
-  }
-  return [best.lat, best.lng];
-}
-
 interface SafeCorridor {
   zone: string;
   bbox: { minLat: number; maxLat: number; minLng: number; maxLng: number };
@@ -146,8 +96,8 @@ const NIGHT_SAFE_CORRIDORS: SafeCorridor[] = [
     zone: "Raval",
     bbox: { minLat: 41.375, maxLat: 41.385, minLng: 2.165, maxLng: 2.175 },
     waypoints: [
-      [41.3810, 2.1734],
-      [41.3757, 2.1700],
+      [41.3810, 2.1734],  // Top of La Rambla (Plaça Catalunya end)
+      [41.3757, 2.1700],  // Mid La Rambla (Liceu area)
     ],
   },
 ];
@@ -668,13 +618,14 @@ function buildSummary(duration: number, distance: number, tags: string[], intent
   if (intent === "quick" && !nightMode) {
     return "direct route";
   }
-  if (nightMode) {
-    const nightTags = ["well-lit streets", "busy corridors"];
-    const extra = tags.length > 0 ? tags[0] : (intent === "quick" ? "direct route" : "well-lit route");
-    return [...nightTags, extra].slice(0, 3).join(" · ");
+  if (nightMode && intent === "quick") {
+    return "well-lit route";
   }
   if (tags.length > 0) {
     return tags.slice(0, 3).join(" · ");
+  }
+  if (nightMode) {
+    return "well-lit route";
   }
   return "pleasant route";
 }
@@ -700,31 +651,19 @@ async function fetchOrsRoutes(
     console.log("[route] Night mode: boosting quiet/green weights");
   }
 
-  // Night mode: avoid Raval interior; if origin or dest is inside Raval, route to nearest main street first
-  const originLat = origin[0];
-  const originLng = origin[1];
-  const destLat = destination[0];
-  const destLng = destination[1];
-
+  // Night safe corridor rerouting
   if (isNight) {
-    const waypoints: [number, number][] = [];
-    if (isInsideRaval(originLat, originLng)) {
-      const nearest = findNearestSafeCorridor(originLat, originLng);
-      waypoints.push(nearest);
-      console.log("[route] Night mode: origin in Raval → route to nearest safe corridor first");
-    }
-    if (isInsideRaval(destLat, destLng)) {
-      const nearest = findNearestSafeCorridor(destLat, destLng);
-      waypoints.push(nearest);
-      console.log("[route] Night mode: destination in Raval → route via nearest safe corridor");
-    }
-    if (waypoints.length > 0) {
-      const safeRoute = await fetchOrsWaypointRoute(origin, [...waypoints, destination], intent, true);
-      return [{
-        coordinates: safeRoute.coordinates,
-        duration: safeRoute.duration,
-        distance: safeRoute.distance,
-      }];
+    for (const corridor of NIGHT_SAFE_CORRIDORS) {
+      if (routePassesNearZone(origin, destination, corridor.bbox)) {
+        const safeWp = pickSafeWaypoint(origin, destination, corridor.waypoints);
+        console.log(`[route] Night mode: rerouting via safe corridor (${corridor.zone})`);
+        const safeRoute = await fetchOrsWaypointRoute(origin, [safeWp, destination], intent, true);
+        return [{
+          coordinates: safeRoute.coordinates,
+          duration: safeRoute.duration,
+          distance: safeRoute.distance,
+        }];
+      }
     }
   }
 
@@ -741,15 +680,6 @@ async function fetchOrsRoutes(
       weight_factor: 1.6,
     },
   };
-
-  // Use foot-walking profile only; do not add avoid_features (can cause dead-ends). For night mode we only use avoid_polygons.
-  // Night mode: avoid Raval interior (only when neither origin nor destination is inside Raval)
-  if (isNight && !isInsideRaval(originLat, originLng) && !isInsideRaval(destLat, destLng)) {
-    (body as { options?: { avoid_polygons?: unknown } }).options = {
-      avoid_polygons: RAVAL_AVOID_POLYGON,
-    };
-    console.log("[route] Night mode: adding avoid_polygons (Raval) to ORS request");
-  }
 
   console.log("[route] ORS body:", JSON.stringify(body, null, 2));
 
@@ -1847,7 +1777,7 @@ async function generateDescription(
 
   let userMessage = `Intent: ${intent}. Breakdown: noise=${breakdown.noise}, green=${breakdown.green}, clean=${breakdown.clean}, cultural=${breakdown.cultural}. Duration seconds: ${duration}. Distance meters: ${distance}.`;
   if (destinationName) userMessage += ` Destination: ${destinationName}.`;
-  if (nightMode) userMessage += " Night mode: true — route uses well-lit, busy streets. This summary is for an after-dark walk.";
+  if (nightMode) userMessage += " Night mode: true — route uses well-lit, busy streets.";
 
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -2269,8 +2199,7 @@ export async function POST(req: NextRequest) {
     }
 
     const originCoords: [number, number] = [Number(origin[0]), Number(origin[1])];
-    const forceNightMode = body.forceNightMode === true;
-    const isNight = forceNightMode || SIMULATE_NIGHT || (() => {
+    const isNight = SIMULATE_NIGHT || (() => {
       const h = new Date(
         new Date().toLocaleString("en-US", { timeZone: "Europe/Madrid" })
       ).getHours();
@@ -3342,6 +3271,7 @@ export async function POST(req: NextRequest) {
         destination_address,
         pattern: "mood_only",
         intent,
+        is_loop: isLoop,
         end_point: isLoop ? [loopOrigin[0], loopOrigin[1]] : [waypoint[0], waypoint[1]],
         night_mode: isNight,
       });

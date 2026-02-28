@@ -39,6 +39,8 @@ interface MapViewProps {
   onRemainingUpdate?: (data: { distance: string; time: string }) => void;
   /** Called when user is within 30m of the route end (arrival). */
   onArrived?: () => void;
+  /** When true (loop routes), arrival is only triggered after traveling at least 70% of the route. */
+  isLoopRoute?: boolean;
 }
 
 export default function MapView({
@@ -63,6 +65,7 @@ export default function MapView({
   initialNavCenter,
   onRemainingUpdate,
   onArrived,
+  isLoopRoute = false,
 }: MapViewProps) {
   return (
     <div className="absolute inset-0" style={{ zIndex: 1 }}>
@@ -88,6 +91,7 @@ export default function MapView({
         initialNavCenter={initialNavCenter}
         onRemainingUpdate={onRemainingUpdate}
         onArrived={onArrived}
+        isLoopRoute={isLoopRoute}
       />
     </div>
   );
