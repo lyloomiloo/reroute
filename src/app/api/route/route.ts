@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { supabase } from "@/lib/supabase";
 
 /** Allow API route to run up to 60s (e.g. ORS + LLM + reranking). */
 export const maxDuration = 60;
@@ -1946,6 +1947,61 @@ async function extractWebVerificationLabel(placeName: string, qualifier: string,
   }
 }
 
+/** SerpAPI response shape we use and cache. */
+type SerpApiOrganicResult = { title?: string; snippet?: string };
+type SerpApiCachedShape = { organic_results?: SerpApiOrganicResult[] };
+
+/** Call SerpAPI for a single query. Used when cache misses. */
+async function fetchSerpApiResults(query: string): Promise<SerpApiCachedShape> {
+  const apiKey = process.env.SERPAPI_KEY;
+  if (!apiKey) return { organic_results: [] };
+  const serpUrl = `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${apiKey}&num=3&gl=es&hl=en`;
+  const res = await fetch(serpUrl);
+  const data = (await res.json()) as SerpApiCachedShape;
+  return { organic_results: data.organic_results ?? [] };
+}
+
+const WEB_SEARCH_CACHE_TTL_DAYS = 7;
+const WEB_SEARCH_CACHE_TTL_MS = WEB_SEARCH_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+/** Fetch web search results with Supabase cache. Cache key: placeName::query. TTL 7 days. */
+async function cachedWebSearch(query: string, placeName: string): Promise<SerpApiCachedShape> {
+  const queryKey = `${(placeName ?? "").toLowerCase().trim()}::${(query ?? "").toLowerCase().trim()}`;
+
+  if (supabase) {
+    const { data: cached } = await supabase
+      .from("web_search_cache")
+      .select("results, created_at")
+      .eq("query_key", queryKey)
+      .maybeSingle();
+
+    if (cached?.results != null) {
+      const createdAt = cached.created_at ? new Date(cached.created_at).getTime() : 0;
+      if (Date.now() - createdAt < WEB_SEARCH_CACHE_TTL_MS) {
+        console.log(`[web-cache] HIT: ${queryKey}`);
+        return cached.results as SerpApiCachedShape;
+      }
+      await supabase.from("web_search_cache").delete().eq("query_key", queryKey);
+    }
+  }
+
+  console.log(`[web-cache] MISS: ${queryKey}`);
+  const results = await fetchSerpApiResults(query);
+
+  if (supabase) {
+    supabase
+      .from("web_search_cache")
+      .upsert(
+        { query_key: queryKey, results, created_at: new Date().toISOString() },
+        { onConflict: "query_key" }
+      )
+      .then(() => console.log(`[web-cache] STORED: ${queryKey}`))
+      .catch((err) => console.error("[web-cache] Store error:", err));
+  }
+
+  return results;
+}
+
 type VerificationMethod = "places_data" | "web_search" | "unverified";
 
 /** For specific qualifier searches: only include unverified place in "also nearby" if it has some relevance (name/type/keyword). */
@@ -2118,9 +2174,7 @@ Return JSON only: {"results": [{"index": 0, "matches": true, "reason": "short re
       for (const place of unverifiedPlaces) {
         try {
           const searchQuery = `${place.name} Barcelona ${detectedQualifier}`;
-          const serpUrl = `https://serpapi.com/search.json?q=${encodeURIComponent(searchQuery)}&api_key=${process.env.SERPAPI_KEY}&num=3&gl=es&hl=en`;
-          const serpRes = await fetch(serpUrl);
-          const serpData = (await serpRes.json()) as { organic_results?: Array<{ title?: string; snippet?: string }> };
+          const serpData = await cachedWebSearch(searchQuery, place.name ?? "");
 
           const snippets = (serpData.organic_results ?? [])
             .map((r) => `${r.title ?? ""} ${r.snippet ?? ""}`.toLowerCase())

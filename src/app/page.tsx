@@ -931,30 +931,12 @@ function PageContent() {
                               ↻ Try another
                               </button>
                               )}
+                              {!customStart && (
                               <button
                                 type="button"
                                 onClick={() => {
                             const active = showQuick && routes?.quick ? routes.quick : routes?.recommended;
                             if (!active) return;
-                            const routeCoords = active.coordinates;
-                            if (customStart && routeCoords?.length > 0) {
-                              const up = userPositionRef.current;
-                              if (up) {
-                                const routeStart = routeCoords[0] as [number, number];
-                                const routeStartLat = routeStart[1];
-                                const routeStartLng = routeStart[0];
-                                const distanceToStart = getDistanceMeters(up.lat, up.lng, routeStartLat, routeStartLng);
-                                if (distanceToStart > 500) {
-                                  setToastMessage("You're too far from the start point. Get closer to start navigating.");
-                                  if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-                                  toastTimeoutRef.current = setTimeout(() => {
-                                    setToastMessage(null);
-                                    toastTimeoutRef.current = null;
-                                  }, 4000);
-                                  return;
-                                }
-                              }
-                            }
                             setRemainingDistance(formatDistance(active.distance));
                             setRemainingTime(formatDuration(active.duration));
                             setHasArrived(false);
@@ -964,6 +946,7 @@ function PageContent() {
                               >
                                 Let&apos;s go
                               </button>
+                              )}
                             </div>
                         </div>
                       </>
@@ -1338,7 +1321,7 @@ function PageContent() {
                           )}
 
                           <div className="flex flex-col flex-1 p-3">
-                            <div className="font-mono font-bold text-sm truncate">
+                            <div className="font-mono font-bold text-sm line-clamp-2 mb-0.5">
                               {place.name}
                             </div>
                             {place.qualifierVerified && (place.qualifierReason || placeOptionsQualifierSearched) && (
