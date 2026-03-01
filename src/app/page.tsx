@@ -1268,7 +1268,7 @@ function PageContent() {
                       {placeOptionsFallbackMessage}
                     </p>
                   ) : (
-                    <p className="font-mono text-[14px] text-blue-400 uppercase tracking-wide whitespace-nowrap">
+                    <p className="font-mono text-[11.7px] text-blue-400 uppercase tracking-wide whitespace-nowrap p-0 m-0">
                       BETA · RESULTS MAY VARY · CHECK REVIEWS
                     </p>
                   )}
