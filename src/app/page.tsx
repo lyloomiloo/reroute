@@ -1248,9 +1248,9 @@ function PageContent() {
         )}
               {placeOptions && placeOptions.length > 0 && (
                 <div className="px-4 py-3">
-                  <div className="flex justify-between items-center mb-2">
+                  <div className="flex justify-between items-center">
                     {/* Headline — either generated summary or default */}
-                    <h2 className="font-mono font-bold text-[1.29rem] tracking-tight uppercase leading-tight">
+                    <h2 className="font-mono font-bold text-[1.29rem] tracking-tight uppercase leading-tight mb-0 pb-0">
                       {placeOptionsSortLabel ?? placeOptionsHeading ?? "CHOOSE A PLACE"}
                     </h2>
                     <button
@@ -1268,7 +1268,7 @@ function PageContent() {
                       {placeOptionsFallbackMessage}
                     </p>
                   ) : (
-                    <p className="font-mono text-[11.7px] text-blue-400 uppercase tracking-wide whitespace-nowrap p-0 m-0">
+                    <p className="font-mono text-[11.7px] text-blue-400 uppercase tracking-wide whitespace-nowrap my-1.5">
                       BETA · RESULTS MAY VARY · CHECK REVIEWS
                     </p>
                   )}

@@ -2336,6 +2336,12 @@ function trimTrailingPunctuation(s: string | undefined | null): string {
   return s.replace(/[\s,;:.!]+$/, "").trim();
 }
 
+/** Strip leading/trailing single or double quotes from place card descriptions (e.g. GPT sometimes returns "Greek-inspired café"). */
+function stripDescriptionQuotes(s: string | undefined | null): string {
+  if (!s) return "";
+  return s.replace(/^["']|["']$/g, "").trim();
+}
+
 /** Map Places API primaryType to a short human-readable label (fallback only). */
 function placeTypeToLabel(primaryType: string | undefined): string {
   if (!primaryType) return "place";
@@ -2480,8 +2486,8 @@ Reply with ONLY a valid JSON array, nothing else.`,
         _fitScore: match?.fit_score ?? 5,
         description:
           match?.reason && match.fit_score >= 6
-            ? trimTrailingPunctuation(truncateToWords(match.reason, 7))
-            : place.description,
+            ? stripDescriptionQuotes(trimTrailingPunctuation(truncateToWords(match.reason, 7)))
+            : (place.description != null ? stripDescriptionQuotes(place.description) : null),
       };
     });
 
@@ -2595,11 +2601,11 @@ async function searchPlace(
     const primaryType = place.primaryType;
     let description: string | null = null;
     if (editorialText && !/experience|discover|explore|authentic|hidden gem/i.test(editorialText)) {
-      description = truncateToWords(editorialText, 7);
+      description = stripDescriptionQuotes(truncateToWords(editorialText, 7));
     }
     if (!description && reviewText) {
       const firstSentence = reviewText.split(/[.!?]/)[0]?.trim() ?? reviewText;
-      description = truncateToWords(firstSentence, 7);
+      description = stripDescriptionQuotes(truncateToWords(firstSentence, 7));
     }
     if (!description) {
       description = placeTypeToLabel(primaryType);
@@ -2643,7 +2649,7 @@ async function searchPlace(
         const d = needLlmDescription[i];
         const text = llmDescriptions[i];
         if (text && out[d.index]) {
-          out[d.index].description = trimTrailingPunctuation(truncateToWords(text, 7));
+          out[d.index].description = stripDescriptionQuotes(trimTrailingPunctuation(truncateToWords(text, 7)));
         }
       }
     } catch {
