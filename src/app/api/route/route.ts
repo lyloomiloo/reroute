@@ -4394,6 +4394,7 @@ export async function POST(req: NextRequest) {
                     console.log("[places] Backfilled", backfill.length, "to reach minimum 5:", backfill.map((p) => p.name));
                   }
                 }
+                const fallbackMessage = null;
                 const mergedFallback = fallbackMessage ?? verificationMain.fallbackMessage;
                 const contentKeywordsMain = moodLower.split(/\s+/).filter((w) => w.length > 2 && !CONTENT_KEYWORD_STOP_WORDS.includes(w));
                 const matchingPlacesMain = contentKeywordsMain.length > 0
