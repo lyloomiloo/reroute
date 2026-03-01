@@ -1352,29 +1352,14 @@ function PageContent() {
                             <h3 className="font-mono font-bold text-sm line-clamp-1 w-full text-gray-900">
                               {place.name ?? "Place"}
                             </h3>
-                            {/* Single slot: feature tag (green) OR description (grey), never both */}
-                            {(() => {
-                              const verifiedTag =
-                                place.qualifierVerified && (place.qualifierReason ?? placeOptionsQualifierSearched) != null
-                                  ? `✓ ${place.qualifierReason ?? `${placeOptionsQualifierSearched} mentioned in ${place.qualifierSource === "web" ? "web results" : "reviews"}`}`
-                                  : null;
-                              const unverifiedTag =
-                                !place.qualifierVerified && placeOptionsQualifierSearched != null
-                                  ? (place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`)
-                                  : null;
-                              const featureTagLine = (verifiedTag ?? unverifiedTag)?.trim() ?? "";
-                              const useFeatureTag = featureTagLine.length > 0;
-                              const isVerifiedTag = verifiedTag != null && verifiedTag.length > 0;
-                              return useFeatureTag ? (
-                                <p className={`font-mono text-[10px] uppercase line-clamp-2 min-h-[2.5em] text-left w-full mt-0.5 ${isVerifiedTag ? "text-green-600" : "text-gray-500"}`}>
-                                  {featureTagLine}
-                                </p>
-                              ) : (
-                                <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full mt-0.5">
-                                  {place.description != null ? place.description.replace(/\.$/, "") : null}
-                                </p>
-                              );
-                            })()}
+                            {/* Always show green relevance tag (why this place matches) */}
+                            <p className="font-mono text-[10px] text-green-600 uppercase line-clamp-1 min-h-[1.25em] text-left w-full mt-0.5">
+                              ✓ {place.relevanceTag ?? place.qualifierReason ?? "MATCHES YOUR SEARCH"}
+                            </p>
+                            {/* Description (2 lines) */}
+                            <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full mt-0.5">
+                              {place.description != null ? place.description.replace(/\.$/, "") : null}
+                            </p>
                             <div className="mt-auto pt-1 flex flex-row items-center gap-2 min-h-0">
                               <p className="font-mono text-[10px] text-gray-400 flex-1 min-w-0">
                                 {place.rating != null && (

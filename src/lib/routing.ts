@@ -65,6 +65,8 @@ export interface PlaceOption {
   qualifierSource?: string | null;
   /** Short reason for verification or unverified (e.g. "CONFIRMED IN REVIEWS", "no mention in reviews"). */
   qualifierReason?: string | null;
+  /** Always-present relevance tag (why this place matches). Shown as green ✓ on every card. */
+  relevanceTag?: string | null;
 }
 
 export interface RoutesResponse {

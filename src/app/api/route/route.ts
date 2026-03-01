@@ -1556,6 +1556,8 @@ export interface PlaceOptionResult {
   qualifierSource?: string | null;
   /** Short reason from LLM verification (e.g. "reviews mention dogs and pet-friendly vibe"). */
   qualifierReason?: string | null;
+  /** Always-present relevance tag (why this place matches). From verification, LLM, or fallback. Shown as green ✓ on card. */
+  relevanceTag?: string | null;
   /** For subjective sort (e.g. "sorted by most reviewed"). */
   userRatingCount?: number | null;
   /** For subjective sort (price_asc / price_desc). */
@@ -2640,15 +2642,17 @@ async function searchPlace(
   }
   if (needLlmDescription.length > 0) {
     try {
-      const llmDescriptions = await generatePlaceDescriptions(
+      const { descriptions: llmDescriptions, reasons: llmReasons } = await generatePlaceDescriptionsAndReasons(
         needLlmDescription.map((p) => ({ name: p.name, primaryType: p.primaryType })),
         query
       );
       for (let i = 0; i < needLlmDescription.length; i++) {
         const d = needLlmDescription[i];
         const text = llmDescriptions[i];
-        if (text && out[d.index]) {
-          out[d.index].description = stripDescriptionQuotes(trimTrailingPunctuation(truncateToWords(text, 7)));
+        const reason = llmReasons[i];
+        if (out[d.index]) {
+          if (text) out[d.index].description = stripDescriptionQuotes(trimTrailingPunctuation(truncateToWords(text, 7)));
+          if (reason) out[d.index].relevanceTag = reason;
         }
       }
     } catch {
@@ -2931,18 +2935,33 @@ function softenSummaryForEmotionalSupport(summary: string | null | undefined): s
   return softened || "A quiet, peaceful walk";
 }
 
-/** One batch LLM call to generate 5-7 word descriptions for place cards. Short and specific. Optional searchQuery tailors descriptions to what the user is looking for. */
-async function generatePlaceDescriptions(
+/** Fallback relevance tag when no LLM or verification reason. Always specific to rating. */
+function generateFallbackTag(place: { rating?: number | null }, _intent: string, _query: string): string {
+  const r = place.rating;
+  if (r != null && r >= 4.7) return "HIGHLY RATED BY VISITORS";
+  if (r != null && r >= 4.5) return "WELL REVIEWED SPOT";
+  return "MATCHES YOUR SEARCH";
+}
+
+/** Ensure every place has a relevanceTag (green ✓ on card). Prefer qualifierReason, then existing relevanceTag, then fallback. */
+function ensureRelevanceTags(places: PlaceOptionResult[], intent: string, query: string): void {
+  for (const p of places) {
+    p.relevanceTag = p.qualifierReason ?? p.relevanceTag ?? generateFallbackTag(p, intent, query);
+  }
+}
+
+/** One batch LLM call: 5-7 word description + 3-5 word relevance reason per place. Returns parallel arrays; missing entries are empty. */
+async function generatePlaceDescriptionsAndReasons(
   places: { name: string; primaryType?: string }[],
   searchQuery?: string | null
-): Promise<string[]> {
-  if (places.length === 0) return [];
+): Promise<{ descriptions: string[]; reasons: string[] }> {
+  if (places.length === 0) return { descriptions: [], reasons: [] };
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return places.map(() => "");
+  if (!apiKey) return { descriptions: places.map(() => ""), reasons: places.map(() => "") };
   const list = places.map((p, i) => `${i + 1}. ${p.name}${p.primaryType ? ` (${p.primaryType})` : ""}`).join("\n");
   const contextInstruction = searchQuery?.trim()
-    ? `The user searched for: "${searchQuery.trim()}". For each place, write a 5-7 word description relevant to what they're looking for. Be specific, not generic. Base ONLY on place NAME and TYPE. Never invent amenities unless the name strongly implies them.`
-    : `Write a 5-7 word description for each place. Be specific, not generic. Every word should tell you something unique about the place. Base ONLY on the place name and type. Never invent amenities or features.`;
+    ? `The user searched for: "${searchQuery.trim()}". For each place, provide (1) a 5-7 word description and (2) a 3-5 word reason why this place matches the search. Be specific to the query.`
+    : `For each place provide (1) a 5-7 word description and (2) a 3-5 word reason why it's a good pick. Base on place name and type only.`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -2951,37 +2970,45 @@ async function generatePlaceDescriptions(
     },
     body: JSON.stringify({
       model: "gpt-4o-mini",
-      max_tokens: 200,
+      max_tokens: 400,
       temperature: 0.5,
       messages: [
         {
           role: "system",
           content: `${contextInstruction}
 
-Examples (5-7 words, specific):
-- "Specialty matcha in a minimalist space"
-- "Greek café with housemade pastries"
-- "Cozy brunch spot with strong wifi"
-- "Specialty coffee with outdoor terrace"
-- "Industrial-chic workspace with great espresso"
+For each place, also provide a 'reason' (3-5 words, UPPERCASE) explaining why this place matches the search. Examples:
+- For "best matcha": "HIGHLY RATED MATCHA MENU"
+- For "cool bar": "CREATIVE COCKTAILS AND AMBIANCE"
+- For "hidden gem cafe": "LOCAL FAVORITE, FEW TOURISTS"
+- For "laptop-friendly": "WIFI AND POWER OUTLETS"
+- For "calm cafe": "QUIET ATMOSPHERE WITH SEATING"
+Always specific to the search query, not generic.
 
-Bad (too long): "Modern café known for its inviting ambiance and espresso drinks"
-Bad (generic): "Nice café with good food"
-Good: short AND specific — every word should tell you something unique about the place.
-
-Never use: experience, discover, explore, authentic, hidden gem. Never invent details unless the place name explicitly implies them.
-
-Reply with one line per place, in the same order, numbered 1., 2., etc. Nothing else.`,
+Reply with ONLY a valid JSON array of objects in the same order as the places. Each object: { "description": "5-7 word description", "reason": "3-5 WORD REASON" }. No other text.`,
         },
-        { role: "user", content: `Places in Barcelona:\n${list}` },
+        { role: "user", content: `Places in Barcelona:\n${list}\n\nSearch context: ${searchQuery?.trim() ?? "general"}` },
       ],
     }),
   });
-  if (!res.ok) return places.map(() => "");
+  const descriptions = places.map(() => "");
+  const reasons = places.map(() => "");
+  if (!res.ok) return { descriptions, reasons };
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   const text = data.choices?.[0]?.message?.content?.trim() ?? "";
-  const lines = text.split(/\n/).map((s) => s.replace(/^\d+\.\s*/, "").trim()).filter(Boolean);
-  return places.map((_, i) => lines[i] ?? "");
+  try {
+    const parsed = JSON.parse(text) as Array<{ description?: string; reason?: string }>;
+    for (let i = 0; i < places.length && i < parsed.length; i++) {
+      const d = parsed[i];
+      if (d && typeof d.description === "string") descriptions[i] = stripDescriptionQuotes(trimTrailingPunctuation(truncateToWords(d.description, 7)));
+      if (d && typeof d.reason === "string") reasons[i] = String(d.reason).trim().toUpperCase().slice(0, 50);
+    }
+  } catch {
+    // fallback: try to get at least descriptions from line-based format
+    const lines = text.split(/\n/).map((s) => s.replace(/^\d+\.\s*/, "").trim()).filter(Boolean);
+    for (let i = 0; i < places.length && i < lines.length; i++) descriptions[i] = stripDescriptionQuotes(trimTrailingPunctuation(truncateToWords(lines[i], 7)));
+  }
+  return { descriptions, reasons };
 }
 
 /** One batch LLM call: returns 6-10 word descriptions for each POI. If it fails, return empty so we show name only. */
@@ -3704,6 +3731,7 @@ export async function POST(req: NextRequest) {
                 console.log("[sort] Final sortLabel:", sortLabelViewpointFinal);
                 console.log("[route] Response includes sort_label:", sortLabelViewpointFinal, "fallback_message:", fallbackMessage);
                 console.log("[response] Building place_options from (same array as map pins):", placeOptionsViewpoint.slice(0, 5).map((p) => p.name));
+                ensureRelevanceTags(placeOptionsViewpoint, intent, typeof moodText === "string" ? moodText : "");
                 console.log("[places] Returning place_options, objective?", isObjectiveBasedSearch(parsedPoiQuery, typeof moodText === "string" ? moodText : null), "query:", parsedPoiQuery, "moodText:", typeof moodText === "string" ? moodText.substring(0, 50) : null);
                 return NextResponse.json({
                   place_options: placeOptionsViewpoint,
@@ -3956,6 +3984,7 @@ export async function POST(req: NextRequest) {
                   }
                 }
                 const fallbackMessage = null;
+                ensureRelevanceTags(placeOptionsOffset, intent, typeof moodText === "string" ? moodText : "");
                 return NextResponse.json({
                   place_options: placeOptionsOffset,
                   needs_place_selection: true,
@@ -4215,6 +4244,7 @@ export async function POST(req: NextRequest) {
                 console.log("[sort] Final sortLabel:", sortLabelMainFinal);
                 console.log("[route] Response includes sort_label:", sortLabelMainFinal, "fallback_message:", mergedFallback);
                 console.log("[response] Building place_options from (same array as map pins):", placeOptionsMain.slice(0, 5).map((p) => p.name));
+                ensureRelevanceTags(placeOptionsMain, intent, typeof moodText === "string" ? moodText : "");
                 console.log("[places] Returning place_options, objective?", isObjectiveBasedSearch(parsedPoiQuery, typeof moodText === "string" ? moodText : null), "query:", parsedPoiQuery, "moodText:", typeof moodText === "string" ? moodText.substring(0, 50) : null);
                 return NextResponse.json({
                   place_options: placeOptionsMain,
