@@ -1268,7 +1268,7 @@ function PageContent() {
                       {placeOptionsFallbackMessage}
                     </p>
                   ) : (
-                    <p className="font-mono text-[9px] text-blue-400 uppercase tracking-wide whitespace-nowrap">
+                    <p className="font-mono text-[10px] text-blue-400 uppercase tracking-wide whitespace-nowrap mb-2">
                       BETA · RESULTS MAY VARY · CHECK REVIEWS
                     </p>
                   )}
@@ -1350,7 +1350,7 @@ function PageContent() {
                             {/* 3. Description + rating (left) | GO button (right) */}
                             <div className="mt-auto pt-1 flex flex-row items-center gap-2 min-h-0">
                               <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full">
+                                <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full overflow-hidden">
                                   {place.description != null ? place.description.replace(/\.$/, "") : null}
                                 </p>
                                 <p className="font-mono text-[10px] text-gray-400 mt-0.5">

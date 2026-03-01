@@ -2480,7 +2480,7 @@ Reply with ONLY a valid JSON array, nothing else.`,
         _fitScore: match?.fit_score ?? 5,
         description:
           match?.reason && match.fit_score >= 6
-            ? trimTrailingPunctuation(truncateToWords(match.reason, 12))
+            ? trimTrailingPunctuation(truncateToWords(match.reason, 10))
             : place.description,
       };
     });
@@ -2595,11 +2595,11 @@ async function searchPlace(
     const primaryType = place.primaryType;
     let description: string | null = null;
     if (editorialText && !/experience|discover|explore|authentic|hidden gem/i.test(editorialText)) {
-      description = truncateToWords(editorialText, 12);
+      description = truncateToWords(editorialText, 10);
     }
     if (!description && reviewText) {
       const firstSentence = reviewText.split(/[.!?]/)[0]?.trim() ?? reviewText;
-      description = truncateToWords(firstSentence, 12);
+      description = truncateToWords(firstSentence, 10);
     }
     if (!description) {
       description = placeTypeToLabel(primaryType);
@@ -2643,7 +2643,7 @@ async function searchPlace(
         const d = needLlmDescription[i];
         const text = llmDescriptions[i];
         if (text && out[d.index]) {
-          out[d.index].description = trimTrailingPunctuation(truncateToWords(text, 12));
+          out[d.index].description = trimTrailingPunctuation(truncateToWords(text, 10));
         }
       }
     } catch {
@@ -2936,8 +2936,8 @@ async function generatePlaceDescriptions(
   if (!apiKey) return places.map(() => "");
   const list = places.map((p, i) => `${i + 1}. ${p.name}${p.primaryType ? ` (${p.primaryType})` : ""}`).join("\n");
   const contextInstruction = searchQuery?.trim()
-    ? `The user searched for: "${searchQuery.trim()}". For each place, write a description that is exactly 8-12 words long, relevant to what they're looking for. You may infer likely features ONLY from the place NAME and TYPE. NEVER invent specific amenities unless the name strongly implies them. If the natural description is too short, add a relevant detail (neighborhood, specialty, atmosphere).`
-    : `Generate a description that is exactly 8-12 words long. Always fill 2 full lines of text at mobile width. If the natural description is too short, add a relevant detail (neighborhood, specialty, atmosphere). Base descriptions ONLY on the place name and type. Never invent amenities or features.`;
+    ? `The user searched for: "${searchQuery.trim()}". For each place, write a description that is exactly 8-10 words long, relevant to what they're looking for. You may infer likely features ONLY from the place NAME and TYPE. NEVER invent specific amenities unless the name strongly implies them. If the natural description is too short, add a relevant detail (neighborhood, specialty, atmosphere).`
+    : `Generate a description that is exactly 8-10 words long. Fits 2 lines on mobile. If the natural description is too short, add a relevant detail (neighborhood, specialty, atmosphere). Base descriptions ONLY on the place name and type. Never invent amenities or features.`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
