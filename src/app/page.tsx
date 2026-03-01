@@ -1262,13 +1262,13 @@ function PageContent() {
                       ✕
                     </button>
                   </div>
-                  {/* Subtitle — fallback message or beta disclaimer (count headline removed) */}
+                  {/* Subtitle — fallback message or beta disclaimer */}
                   {placeOptionsFallbackMessage ? (
-                    <p className="font-mono text-xs text-blue-400 uppercase tracking-wide">
+                    <p className="font-mono text-xs text-blue-400 uppercase tracking-wide mb-3">
                       {placeOptionsFallbackMessage}
                     </p>
                   ) : (
-                    <p className="font-mono text-[10px] text-blue-400 uppercase tracking-wide whitespace-nowrap mb-2">
+                    <p className="text-[11px] text-gray-400 font-mono tracking-wide mb-3">
                       BETA · RESULTS MAY VARY · CHECK REVIEWS
                     </p>
                   )}
@@ -1294,12 +1294,11 @@ function PageContent() {
                               <div className="flex-1 h-px bg-gray-200" />
                             </div>
                           )}
-                          <div
-                            className="w-[240px] min-h-[280px] max-h-[280px] flex-shrink-0 snap-start flex flex-col rounded-lg border border-gray-200 bg-white overflow-hidden"
-                          >
-                          {photoUrls.length > 0 && (
-                            <div className="relative w-full h-[160px] overflow-hidden rounded-t-lg flex-shrink-0">
-                              <div className="flex overflow-x-auto h-[160px] scrollbar-hide snap-x snap-mandatory w-full">
+                          <div className="min-w-[300px] max-w-[300px] rounded-lg border border-gray-200 overflow-hidden flex-shrink-0 snap-start bg-white">
+                          {/* Photo — fixed height */}
+                          {photoUrls.length > 0 ? (
+                            <div className="relative h-[180px] w-full overflow-hidden">
+                              <div className="flex overflow-x-auto h-full scrollbar-hide snap-x snap-mandatory w-full">
                                 {photoUrls.map((url, j) => (
                                   <Image
                                     key={j}
@@ -1307,62 +1306,54 @@ function PageContent() {
                                     alt=""
                                     width={400}
                                     height={300}
-                                    className="w-full h-[160px] flex-shrink-0 object-cover rounded-t-lg snap-start"
+                                    className="w-full h-full flex-shrink-0 object-cover snap-start"
                                     unoptimized
                                   />
                                 ))}
                               </div>
                               {photoUrls.length > 1 && (
                                 <>
-                                  <div
-                                    className="absolute left-0 top-0 bottom-0 w-6 flex items-center justify-center bg-gradient-to-r from-black/30 to-transparent pointer-events-none"
-                                    aria-hidden
-                                  >
+                                  <div className="absolute left-0 top-0 bottom-0 w-6 flex items-center justify-center bg-gradient-to-r from-black/30 to-transparent pointer-events-none" aria-hidden>
                                     <span className="text-white text-sm">‹</span>
                                   </div>
-                                  <div
-                                    className="absolute right-0 top-0 bottom-0 w-6 flex items-center justify-center bg-gradient-to-l from-black/30 to-transparent pointer-events-none"
-                                    aria-hidden
-                                  >
+                                  <div className="absolute right-0 top-0 bottom-0 w-6 flex items-center justify-center bg-gradient-to-l from-black/30 to-transparent pointer-events-none" aria-hidden>
                                     <span className="text-white text-sm">›</span>
                                   </div>
                                 </>
                               )}
                             </div>
+                          ) : (
+                            <div className="h-[180px] w-full bg-gray-100" />
                           )}
 
-                          <div className="flex-1 flex flex-col gap-0.5 min-h-0 p-3">
-                            {/* 1. Place name — always first, bold */}
-                            <h3 className="font-mono font-bold text-sm line-clamp-1 min-h-[1.25em] w-full text-gray-900">
-                              {place.name ?? "Place"}
-                            </h3>
-                            {/* 2. Feature qualifier tag (below name) — single line */}
+                          {/* Text content — compact, space-y-1 */}
+                          <div className="p-3 space-y-1">
+                            <h3 className="font-bold text-base font-mono truncate">{place.name ?? "Place"}</h3>
+
                             {place.qualifierVerified && (place.qualifierReason ?? placeOptionsQualifierSearched) != null && (
-                              <span className="font-mono text-[10px] text-green-600 uppercase block line-clamp-1 overflow-hidden">
+                              <p className="text-xs text-green-600 font-mono truncate">
                                 ✓ {place.qualifierReason ?? `${placeOptionsQualifierSearched} mentioned in ${place.qualifierSource === "web" ? "web results" : "reviews"}`}
-                              </span>
+                              </p>
                             )}
                             {!place.qualifierVerified && placeOptionsQualifierSearched != null && (
-                              <span className="font-mono text-[10px] text-gray-400 uppercase block line-clamp-1 overflow-hidden">
+                              <p className="text-xs text-gray-400 font-mono truncate">
                                 {place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`}
-                              </span>
+                              </p>
                             )}
-                            {/* 3. Description + rating (left) | GO button (right) — description single line, tight below tag */}
-                            <div className="flex flex-row items-center gap-2 min-h-0 pt-0.5">
-                              <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                <p className="font-mono text-[10px] text-gray-500 line-clamp-1 min-h-[1.25em] text-left w-full overflow-hidden">
+
+                            <div className="flex items-end justify-between gap-2 pt-1">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-gray-600 font-mono truncate">
                                   {place.description != null ? place.description.replace(/\.$/, "") : null}
                                 </p>
-                                <p className="font-mono text-[10px] text-gray-400 mt-0.5">
-                                  {place.rating != null && (
-                                    <span>{place.rating.toFixed(1)} ★</span>
-                                  )}
+                                <p className="text-sm text-gray-400 font-mono mt-0.5">
+                                  {place.rating != null ? `${place.rating.toFixed(1)} ★` : null}
                                 </p>
                               </div>
                               <button
                                 type="button"
                                 onClick={() => handleRouteToPlace(place)}
-                                className="flex-shrink-0 self-center bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded hover:opacity-90 min-w-[3rem]"
+                                className="px-4 py-2 bg-black text-white text-sm font-mono rounded flex-shrink-0 hover:opacity-90"
                               >
                                 GO
                               </button>
