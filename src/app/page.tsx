@@ -6,7 +6,6 @@ import PhoneFrame from "@/components/PhoneFrame";
 import MapView from "@/components/MapView";
 import {
   getRoute,
-  getRouteParseOnly,
   getRouteWithDuration,
   getRouteWithDestination,
   type RoutesResponse,
@@ -126,6 +125,7 @@ function PageContent() {
   const [edgeCaseMessage, setEdgeCaseMessage] = useState<string | null>(null);
   const [edgeCaseSuggestion, setEdgeCaseSuggestion] = useState<string | null>(null);
   const [edgeCaseTheme, setEdgeCaseTheme] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [showDestinationDetail, setShowDestinationDetail] = useState(false);
   /** Last mood text used to fetch current route; used by "Try another" for mood_and_area and mood_only. */
@@ -248,8 +248,8 @@ function PageContent() {
   const handleMoodSubmit = async (overrideMoodText?: string) => {
     const text = (overrideMoodText ?? moodInput).trim();
     setInputFocused(false);
-    setLoadingType("walk");
     setIsLoading(true);
+    setLoadingType("walk"); // generic until preflight returns
     setRouteError(null);
     setDurationPrompt(null);
     setPlaceOptions(null);
@@ -266,14 +266,19 @@ function PageContent() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ROUTE_TIMEOUT_MS);
     try {
-      // Get actual action type from API so loading messages match what's happening
-      try {
-        const parseRes = await getRouteParseOnly(origin, text, { signal: controller.signal, forceNightMode: nightModeOverride });
-        const loadingTypeFromAction: "route" | "search" | "walk" =
-          parseRes.actionType === "place_search" ? "search" : parseRes.actionType === "route" ? "route" : "walk";
-        setLoadingType(loadingTypeFromAction);
-      } catch {
-        // keep default "walk" if parse-only fails
+      const preflight = await getRoute(origin, text, {
+        signal: controller.signal,
+        forceNightMode: nightModeOverride,
+        preflight: true,
+      });
+      if (preflight != null && "actionType" in preflight) {
+        const t =
+          preflight.actionType === "place_search"
+            ? "search"
+            : preflight.actionType === "loop_route"
+              ? "walk"
+              : "route";
+        setLoadingType(t);
       }
       const result = await getRoute(origin, text, { signal: controller.signal, forceNightMode: nightModeOverride });
       console.log("[frontend] API response keys:", Object.keys(result));
@@ -785,8 +790,8 @@ function PageContent() {
                     alt &&
                     main &&
                     routes.pattern !== "mood_and_area" &&
-                    Math.abs(alt.duration - main.duration) > 120 &&
-                    Math.abs(alt.distance - main.distance) > 200;
+                    Math.abs(alt.duration - main.duration) > 60 &&
+                    Math.abs(alt.distance - main.distance) > 100;
                   return showAlternative
                     ? showQuick
                       ? main.coordinates
@@ -825,6 +830,7 @@ function PageContent() {
               isLoopRoute={routes?.isLoop ?? false}
               onUserPositionChange={(lat, lng) => {
                 userPositionRef.current = { lat, lng };
+                setUserLocation({ lat, lng });
               }}
             />
             {hasArrived && (
@@ -890,7 +896,9 @@ function PageContent() {
                         {routes.destination_name && (
                           routes.pattern === "mood_and_area" ? (
                             <p className="font-mono text-sm text-gray-500 mt-2">
-                              WALK IN {routes.destination_name}
+                              {active.summary
+                                ? `VIA ${active.summary.replace(/\s*·\s*/g, " AND ").toUpperCase()}`
+                                : `WALK IN ${routes.destination_name}`}
                             </p>
                           ) : (
                             <button
@@ -919,8 +927,8 @@ function PageContent() {
                                 const showAlternative =
                                   main &&
                                   routes.pattern !== "mood_and_area" &&
-                                  Math.abs(alt.duration - main.duration) > 120 &&
-                                  Math.abs(alt.distance - main.distance) > 200;
+                                  Math.abs(alt.duration - main.duration) > 60 &&
+                                  Math.abs(alt.distance - main.distance) > 100;
                                 return showAlternative ? (
                                   <div className="mb-2">
                                     {showQuick ? (
@@ -959,7 +967,13 @@ function PageContent() {
                               ↻ Try another
                               </button>
                               )}
-                              {!customStart && (
+                              {!customStart && (() => {
+                                const routeOrigin = origin;
+                                const distanceToStart = userLocation && routeOrigin
+                                  ? getDistanceMeters(userLocation.lat, userLocation.lng, routeOrigin[0], routeOrigin[1])
+                                  : null;
+                                const showLetsGo = distanceToStart === null || distanceToStart < 200;
+                                return showLetsGo ? (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -974,7 +988,8 @@ function PageContent() {
                               >
                                 Let&apos;s go
                               </button>
-                              )}
+                                ) : null;
+                              })()}
                             </div>
                         </div>
                       </>
@@ -1349,31 +1364,56 @@ function PageContent() {
                           )}
 
                           <div className="flex-1 flex flex-col min-h-0 p-3">
-                            <h3 className="font-mono font-bold text-sm line-clamp-1 w-full text-gray-900">
-                              {place.name ?? "Place"}
-                            </h3>
-                            {/* Always show green relevance tag (why this place matches) */}
-                            <p className="font-mono text-[10px] text-green-600 uppercase line-clamp-1 min-h-[1.25em] text-left w-full mt-0.5">
-                              ✓ {place.relevanceTag ?? place.qualifierReason ?? "MATCHES YOUR SEARCH"}
-                            </p>
-                            {/* Description (2 lines) */}
-                            <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full mt-0.5">
-                              {place.description != null ? place.description.replace(/\.$/, "") : null}
-                            </p>
-                            <div className="mt-auto pt-1 flex flex-row items-center gap-2 min-h-0">
-                              <p className="font-mono text-[10px] text-gray-400 flex-1 min-w-0">
-                                {place.rating != null && (
-                                  <span>{place.rating.toFixed(1)} ★</span>
-                                )}
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() => handleRouteToPlace(place)}
-                                className="flex-shrink-0 bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded hover:opacity-90 min-w-[3rem]"
-                              >
-                                GO
-                              </button>
-                            </div>
+                            {(() => {
+                              const verifiedTag =
+                                place.qualifierVerified && (place.qualifierReason ?? placeOptionsQualifierSearched) != null
+                                  ? `✓ ${place.qualifierReason ?? `${placeOptionsQualifierSearched} mentioned in ${place.qualifierSource === "web" ? "web results" : "reviews"}`}`
+                                  : null;
+                              const unverifiedTag =
+                                !place.qualifierVerified && placeOptionsQualifierSearched != null
+                                  ? (place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`)
+                                  : null;
+                              const fallbackTag =
+                                place.qualifierReason != null && String(place.qualifierReason).trim() !== ""
+                                  ? `✓ ${String(place.qualifierReason).trim()}`
+                                  : null;
+                              const featureTagLine = (verifiedTag ?? unverifiedTag ?? fallbackTag)?.trim() ?? "";
+                              const hasFeatureTag = featureTagLine.length > 0;
+                              return (
+                                <>
+                                  <div className={hasFeatureTag ? "space-y-1" : ""}>
+                                    <h3 className="font-mono font-bold text-sm line-clamp-1 w-full text-gray-900">
+                                      {place.name ?? "Place"}
+                                    </h3>
+                                    {hasFeatureTag && (
+                                      <span className={`font-mono text-[10px] uppercase block ${verifiedTag != null || fallbackTag != null ? "text-green-600" : "text-gray-400"}`}>
+                                        {featureTagLine}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {/* Description + rating (left) | GO button (right) */}
+                                  <div className={`mt-auto flex flex-row items-center gap-2 min-h-0 ${hasFeatureTag ? "pt-1" : "pt-0"}`}>
+                                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                      <p className={`font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full ${hasFeatureTag ? "mt-1" : "mt-0"}`}>
+                                        {place.description != null ? place.description.replace(/\.$/, "") : null}
+                                      </p>
+                                      <p className="font-mono text-[10px] text-gray-400 mt-0.5">
+                                        {place.rating != null && (
+                                          <span>{place.rating.toFixed(1)} ★</span>
+                                        )}
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRouteToPlace(place)}
+                                      className="flex-shrink-0 self-center bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded hover:opacity-90 min-w-[3rem]"
+                                    >
+                                      GO
+                                    </button>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                         </Fragment>

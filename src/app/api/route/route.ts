@@ -1556,14 +1556,41 @@ export interface PlaceOptionResult {
   qualifierSource?: string | null;
   /** Short reason from LLM verification (e.g. "reviews mention dogs and pet-friendly vibe"). */
   qualifierReason?: string | null;
-  /** Always-present relevance tag (why this place matches). From verification, LLM, or fallback. Shown as green ✓ on card. */
-  relevanceTag?: string | null;
   /** For subjective sort (e.g. "sorted by most reviewed"). */
   userRatingCount?: number | null;
   /** For subjective sort (price_asc / price_desc). */
   priceLevel?: number | null;
   /** Weighted keyword mention count (name x5, editorial x2, reviews x1) for final relevance sort. */
   relevanceScore?: number;
+}
+
+/** Generate a short relevance tag for a place when no qualifier reason exists. Always show a green tag on every card. */
+function generateFallbackTag(
+  place: PlaceOptionResult,
+  intent: string,
+  query: string
+): string {
+  const rating = place.rating ?? 0;
+  if (rating >= 4.7) return "HIGHLY RATED BY VISITORS";
+  if (rating >= 4.5) return "WELL REVIEWED SPOT";
+  if (query && query.length > 0) return "MATCHES YOUR SEARCH";
+  return "PICKED FOR YOU";
+}
+
+/** Ensure every place has a non-empty qualifierReason (green tag) for the card. */
+function ensureRelevanceTag(
+  places: PlaceOptionResult[],
+  intent: string,
+  query: string
+): PlaceOptionResult[] {
+  return places.map((p) => ({
+    ...p,
+    qualifierReason:
+      (p.qualifierReason != null && String(p.qualifierReason).trim() !== ""
+        ? String(p.qualifierReason).trim()
+        : generateFallbackTag(p, intent, query)
+      ).toUpperCase(),
+  }));
 }
 
 /** Map Google price level string to number for sorting (1=cheapest, 4=most expensive). */
@@ -2571,7 +2598,20 @@ async function searchPlace(
     }>;
   };
   console.log("[places] searchText query:", query, "found:", (data.places ?? []).length, "results");
-  const places = data.places ?? [];
+  let places = data.places ?? [];
+  // For cafe-like searches, filter out gift shops and non-cafe venue types (S4)
+  const isCafeLikeQuery = /\bcafe\b|coffee\s*shop|coffeehouse|bakery|cafeteria|espresso|find me a cafe/i.test(query);
+  if (isCafeLikeQuery && places.length > 0) {
+    const cafeTypes = ["cafe", "coffee_shop", "bakery", "restaurant", "bar", "espresso_bar"];
+    const excludeTypes = ["gift_shop", "store", "clothing_store", "souvenir_shop", "book_store", "home_goods_store", "shopping_mall"];
+    places = places.filter((place) => {
+      const type = (place.primaryType ?? "").toLowerCase();
+      const isExcluded = excludeTypes.some((t) => type.includes(t));
+      const isCafe = cafeTypes.some((t) => type.includes(t));
+      return isCafe || !isExcluded;
+    });
+    console.log("[places] after cafe filter:", places.length, "results");
+  }
   const out: PlaceOptionResult[] = [];
   const needLlmDescription: { name: string; primaryType?: string; index: number }[] = [];
   for (let idx = 0; idx < places.length; idx++) {
@@ -2642,17 +2682,20 @@ async function searchPlace(
   }
   if (needLlmDescription.length > 0) {
     try {
-      const { descriptions: llmDescriptions, reasons: llmReasons } = await generatePlaceDescriptionsAndReasons(
+      const llmDescriptions = await generatePlaceDescriptions(
         needLlmDescription.map((p) => ({ name: p.name, primaryType: p.primaryType })),
         query
       );
       for (let i = 0; i < needLlmDescription.length; i++) {
         const d = needLlmDescription[i];
-        const text = llmDescriptions[i];
-        const reason = llmReasons[i];
-        if (out[d.index]) {
-          if (text) out[d.index].description = stripDescriptionQuotes(trimTrailingPunctuation(truncateToWords(text, 7)));
-          if (reason) out[d.index].relevanceTag = reason;
+        const item = llmDescriptions[i];
+        if (item && out[d.index]) {
+          if (item.description) {
+            out[d.index].description = stripDescriptionQuotes(trimTrailingPunctuation(truncateToWords(item.description, 7)));
+          }
+          if (item.reason) {
+            out[d.index].qualifierReason = item.reason;
+          }
         }
       }
     } catch {
@@ -2935,33 +2978,18 @@ function softenSummaryForEmotionalSupport(summary: string | null | undefined): s
   return softened || "A quiet, peaceful walk";
 }
 
-/** Fallback relevance tag when no LLM or verification reason. Always specific to rating. */
-function generateFallbackTag(place: { rating?: number | null }, _intent: string, _query: string): string {
-  const r = place.rating;
-  if (r != null && r >= 4.7) return "HIGHLY RATED BY VISITORS";
-  if (r != null && r >= 4.5) return "WELL REVIEWED SPOT";
-  return "MATCHES YOUR SEARCH";
-}
-
-/** Ensure every place has a relevanceTag (green ✓ on card). Prefer qualifierReason, then existing relevanceTag, then fallback. */
-function ensureRelevanceTags(places: PlaceOptionResult[], intent: string, query: string): void {
-  for (const p of places) {
-    p.relevanceTag = p.qualifierReason ?? p.relevanceTag ?? generateFallbackTag(p, intent, query);
-  }
-}
-
-/** One batch LLM call: 5-7 word description + 3-5 word relevance reason per place. Returns parallel arrays; missing entries are empty. */
-async function generatePlaceDescriptionsAndReasons(
+/** One batch LLM call to generate 5-7 word descriptions and optional relevance reason for place cards. */
+async function generatePlaceDescriptions(
   places: { name: string; primaryType?: string }[],
   searchQuery?: string | null
-): Promise<{ descriptions: string[]; reasons: string[] }> {
-  if (places.length === 0) return { descriptions: [], reasons: [] };
+): Promise<{ description: string; reason: string | null }[]> {
+  if (places.length === 0) return [];
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return { descriptions: places.map(() => ""), reasons: places.map(() => "") };
+  if (!apiKey) return places.map(() => ({ description: "", reason: null }));
   const list = places.map((p, i) => `${i + 1}. ${p.name}${p.primaryType ? ` (${p.primaryType})` : ""}`).join("\n");
   const contextInstruction = searchQuery?.trim()
-    ? `The user searched for: "${searchQuery.trim()}". For each place, provide (1) a 5-7 word description and (2) a 3-5 word reason why this place matches the search. Be specific to the query.`
-    : `For each place provide (1) a 5-7 word description and (2) a 3-5 word reason why it's a good pick. Base on place name and type only.`;
+    ? `The user searched for: "${searchQuery.trim()}". For each place, write a 5-7 word description relevant to what they're looking for. Be specific, not generic. Base ONLY on place NAME and TYPE. Never invent amenities unless the name strongly implies them.`
+    : `Write a 5-7 word description for each place. Be specific, not generic. Every word should tell you something unique about the place. Base ONLY on the place name and type. Never invent amenities or features.`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -2970,45 +2998,50 @@ async function generatePlaceDescriptionsAndReasons(
     },
     body: JSON.stringify({
       model: "gpt-4o-mini",
-      max_tokens: 400,
+      max_tokens: 200,
       temperature: 0.5,
       messages: [
         {
           role: "system",
           content: `${contextInstruction}
 
-For each place, also provide a 'reason' (3-5 words, UPPERCASE) explaining why this place matches the search. Examples:
-- For "best matcha": "HIGHLY RATED MATCHA MENU"
-- For "cool bar": "CREATIVE COCKTAILS AND AMBIANCE"
-- For "hidden gem cafe": "LOCAL FAVORITE, FEW TOURISTS"
-- For "laptop-friendly": "WIFI AND POWER OUTLETS"
-- For "calm cafe": "QUIET ATMOSPHERE WITH SEATING"
-Always specific to the search query, not generic.
+Examples (5-7 words, specific):
+- "Specialty matcha in a minimalist space"
+- "Greek café with housemade pastries"
+- "Cozy brunch spot with strong wifi"
+- "Specialty coffee with outdoor terrace"
+- "Industrial-chic workspace with great espresso"
 
-Reply with ONLY a valid JSON array of objects in the same order as the places. Each object: { "description": "5-7 word description", "reason": "3-5 WORD REASON" }. No other text.`,
+Bad (too long): "Modern café known for its inviting ambiance and espresso drinks"
+Bad (generic): "Nice café with good food"
+Good: short AND specific — every word should tell you something unique about the place.
+
+Never use: experience, discover, explore, authentic, hidden gem. Never invent details unless the place name explicitly implies them.
+
+For each line also add a short REASON (3-5 words, UPPERCASE) explaining why this place matches the search. Format: DESCRIPTION | REASON
+Examples: "Specialty matcha in a minimalist space | HIGHLY RATED MATCHA MENU" or "Cool bar with creative drinks | CREATIVE COCKTAILS AND AMBIANCE"
+If no strong reason, use "MATCHES YOUR SEARCH". Never generic like "GOOD PLACE".
+
+Reply with one line per place, in the same order, numbered 1., 2., etc. Nothing else.`,
         },
-        { role: "user", content: `Places in Barcelona:\n${list}\n\nSearch context: ${searchQuery?.trim() ?? "general"}` },
+        { role: "user", content: `Places in Barcelona:\n${list}` },
       ],
     }),
   });
-  const descriptions = places.map(() => "");
-  const reasons = places.map(() => "");
-  if (!res.ok) return { descriptions, reasons };
+  if (!res.ok) return places.map(() => ({ description: "", reason: null }));
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   const text = data.choices?.[0]?.message?.content?.trim() ?? "";
-  try {
-    const parsed = JSON.parse(text) as Array<{ description?: string; reason?: string }>;
-    for (let i = 0; i < places.length && i < parsed.length; i++) {
-      const d = parsed[i];
-      if (d && typeof d.description === "string") descriptions[i] = stripDescriptionQuotes(trimTrailingPunctuation(truncateToWords(d.description, 7)));
-      if (d && typeof d.reason === "string") reasons[i] = String(d.reason).trim().toUpperCase().slice(0, 50);
+  const lines = text.split(/\n/).map((s) => s.replace(/^\d+\.\s*/, "").trim()).filter(Boolean);
+  return places.map((_, i) => {
+    const line = lines[i] ?? "";
+    const pipeIdx = line.indexOf(" | ");
+    if (pipeIdx !== -1) {
+      const description = line.slice(0, pipeIdx).trim();
+      const reason = line.slice(pipeIdx + 3).trim().toUpperCase() || null;
+      return { description, reason };
     }
-  } catch {
-    // fallback: try to get at least descriptions from line-based format
-    const lines = text.split(/\n/).map((s) => s.replace(/^\d+\.\s*/, "").trim()).filter(Boolean);
-    for (let i = 0; i < places.length && i < lines.length; i++) descriptions[i] = stripDescriptionQuotes(trimTrailingPunctuation(truncateToWords(lines[i], 7)));
-  }
-  return { descriptions, reasons };
+    return { description: line, reason: null };
+  });
 }
 
 /** One batch LLM call: returns 6-10 word descriptions for each POI. If it fails, return empty so we show name only. */
@@ -3350,6 +3383,8 @@ const AREA_BBOXES: Record<string, { minLat: number; maxLat: number; minLng: numb
   montjuïc: { minLat: 41.363, maxLat: 41.372, minLng: 2.158, maxLng: 2.178 },
   tibidabo: { minLat: 41.418, maxLat: 41.426, minLng: 2.115, maxLng: 2.125 },
   collserola: { minLat: 41.41, maxLat: 41.44, minLng: 2.08, maxLng: 2.16 },
+  "poble nou": { minLat: 41.39, maxLat: 41.405, minLng: 2.192, maxLng: 2.21 },
+  poblenou: { minLat: 41.39, maxLat: 41.405, minLng: 2.192, maxLng: 2.21 },
 };
 
 function isInBarcelona(lat: number, lng: number): boolean {
@@ -3495,7 +3530,7 @@ export async function POST(req: NextRequest) {
       exclude_place_ids: bodyExcludePlaceIds,
       forceNightMode: bodyForceNightMode,
       retry_count: retryCount,
-      parseOnly: bodyParseOnly,
+      preflight: bodyPreflight,
     } = body;
 
     if (!origin || !Array.isArray(origin) || origin.length < 2) {
@@ -3558,7 +3593,9 @@ export async function POST(req: NextRequest) {
       destination_address = typeof bodyDestinationAddress === "string" ? bodyDestinationAddress : null;
       console.log("[route] destination received (lat, lng):", destCoords, "name:", destination_name || "(none)", "place_type:", destination_place_type || "(none)");
       intent = hasIntentOverride ? (bodyIntent as Intent) : "calm";
-      if (bodyParseOnly === true) return NextResponse.json({ actionType: "route" as const, pattern });
+      if (bodyPreflight === true) {
+        return NextResponse.json({ actionType: "route" as const, pattern, intent });
+      }
     } else if (moodText == null || String(moodText).trim() === "") {
       return NextResponse.json({ error: "moodText required when not passing destination+intent" }, { status: 400 });
     }
@@ -3646,18 +3683,14 @@ export async function POST(req: NextRequest) {
 
         console.log(`[route] Parsed: pattern=${pattern}, intent=${intent}, poi_focus=${poi_focus}, skip_duration=${skipDuration}, is_loop=${isLoop}, poi_search_terms=${JSON.stringify(poi_search_terms)}, suggested_duration=${suggestedDuration}, target_km=${targetDistanceKm}, max_mins=${maxDurationMinutes}`);
 
-        // Optional: return only action type for client loading messages (parseOnly: true)
-        const parseOnly = bodyParseOnly === true;
-        if (parseOnly) {
+        if (bodyPreflight === true) {
           const actionType: "place_search" | "route" | "loop_route" =
             pattern === "mood_and_poi"
               ? "place_search"
-              : pattern === "mood_only" && isLoop
+              : pattern === "mood_only" || pattern === "themed_walk"
                 ? "loop_route"
-                : pattern === "themed_walk"
-                  ? "loop_route"
-                  : "route";
-          return NextResponse.json({ actionType, pattern });
+                : "route";
+          return NextResponse.json({ actionType, pattern, intent });
         }
 
         switch (pattern) {
@@ -3731,10 +3764,10 @@ export async function POST(req: NextRequest) {
                 console.log("[sort] Final sortLabel:", sortLabelViewpointFinal);
                 console.log("[route] Response includes sort_label:", sortLabelViewpointFinal, "fallback_message:", fallbackMessage);
                 console.log("[response] Building place_options from (same array as map pins):", placeOptionsViewpoint.slice(0, 5).map((p) => p.name));
-                ensureRelevanceTags(placeOptionsViewpoint, intent, typeof moodText === "string" ? moodText : "");
                 console.log("[places] Returning place_options, objective?", isObjectiveBasedSearch(parsedPoiQuery, typeof moodText === "string" ? moodText : null), "query:", parsedPoiQuery, "moodText:", typeof moodText === "string" ? moodText.substring(0, 50) : null);
+                const viewpointWithTags = ensureRelevanceTag(placeOptionsViewpoint, intent, String(moodText ?? ""));
                 return NextResponse.json({
-                  place_options: placeOptionsViewpoint,
+                  place_options: viewpointWithTags,
                   needs_place_selection: true,
                   intent,
                   verification_method: verification.verification_method,
@@ -3984,9 +4017,9 @@ export async function POST(req: NextRequest) {
                   }
                 }
                 const fallbackMessage = null;
-                ensureRelevanceTags(placeOptionsOffset, intent, typeof moodText === "string" ? moodText : "");
+                const offsetWithTags = ensureRelevanceTag(placeOptionsOffset, intent, String(moodText ?? ""));
                 return NextResponse.json({
-                  place_options: placeOptionsOffset,
+                  place_options: offsetWithTags,
                   needs_place_selection: true,
                   intent,
                   verification_method: verificationOffset.verification_method,
@@ -4244,11 +4277,12 @@ export async function POST(req: NextRequest) {
                 console.log("[sort] Final sortLabel:", sortLabelMainFinal);
                 console.log("[route] Response includes sort_label:", sortLabelMainFinal, "fallback_message:", mergedFallback);
                 console.log("[response] Building place_options from (same array as map pins):", placeOptionsMain.slice(0, 5).map((p) => p.name));
-                ensureRelevanceTags(placeOptionsMain, intent, typeof moodText === "string" ? moodText : "");
                 console.log("[places] Returning place_options, objective?", isObjectiveBasedSearch(parsedPoiQuery, typeof moodText === "string" ? moodText : null), "query:", parsedPoiQuery, "moodText:", typeof moodText === "string" ? moodText.substring(0, 50) : null);
+                const placeOptionsWithTags = ensureRelevanceTag(placeOptionsMain, intent, String(moodText ?? ""));
                 return NextResponse.json({
-                  place_options: placeOptionsMain,
+                  place_options: placeOptionsWithTags,
                   needs_place_selection: true,
+                  actionType: "place_search" as const,
                   intent,
                   fallback_message: mergedFallback ?? null,
                   verification_method: verificationMain.verification_method,
@@ -4654,7 +4688,12 @@ export async function POST(req: NextRequest) {
         };
         searchQuery = `${areaPoiQueries[intent] || "landmark plaza"} ${parsedArea || ""} Barcelona`.trim();
       }
-      const areaPois = await searchPlace(searchQuery, areaCenter[0], areaCenter[1], 5, 1500);
+      let areaPois = await searchPlace(searchQuery, areaCenter[0], areaCenter[1], 5, 1500);
+      const areaBbox = parsedArea ? getAreaBbox(parsedArea) : null;
+      if (areaBbox) {
+        areaPois = areaPois.filter((p) => p.lat >= areaBbox.minLat && p.lat <= areaBbox.maxLat && p.lng >= areaBbox.minLng && p.lng <= areaBbox.maxLng);
+        if (areaPois.length < 2) console.log("[route] Area POIs after bbox filter:", areaPois.length, "for area:", parsedArea);
+      }
 
       if (areaPois.length >= 2) {
         const maxAreaPois = walkDuration <= 15 ? 2 : walkDuration <= 30 ? 3 : 4;
@@ -5635,6 +5674,7 @@ export async function POST(req: NextRequest) {
       destination_photo: destination_photo ?? undefined,
       pattern,
       intent,
+      actionType: (pattern === "mood_only" || pattern === "themed_walk" ? "loop_route" : "route") as "route" | "loop_route",
       night_mode: isNight,
     });
   } catch (error) {

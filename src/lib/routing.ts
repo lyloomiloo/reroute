@@ -65,8 +65,6 @@ export interface PlaceOption {
   qualifierSource?: string | null;
   /** Short reason for verification or unverified (e.g. "CONFIRMED IN REVIEWS", "no mention in reviews"). */
   qualifierReason?: string | null;
-  /** Always-present relevance tag (why this place matches). Shown as green ✓ on every card. */
-  relevanceTag?: string | null;
 }
 
 export interface RoutesResponse {
@@ -164,45 +162,23 @@ export function isEdgeCaseResponse(
 
 const ROUTE_NOT_FOUND_MSG = "Couldn't find a walkable route — try a closer destination.";
 
-export type ActionType = "place_search" | "route" | "loop_route";
-
-export async function getRouteParseOnly(
-  origin: [number, number],
-  moodText: string,
-  options?: { signal?: AbortSignal; forceNightMode?: boolean }
-): Promise<{ actionType: ActionType; pattern?: string }> {
-  const body: Record<string, unknown> = {
-    origin,
-    moodText: moodText.trim(),
-    parseOnly: true,
-  };
-  if (options?.forceNightMode === true) body.forceNightMode = true;
-  const res = await fetch("/api/route", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: options?.signal,
-  });
-  if (!res.ok) {
-    return { actionType: "route" };
-  }
-  const data = (await res.json()) as { actionType?: ActionType; pattern?: string };
-  return {
-    actionType: data.actionType === "place_search" || data.actionType === "loop_route" ? data.actionType : "route",
-    pattern: data.pattern,
-  };
-}
+export type PreflightResponse = {
+  actionType: "place_search" | "route" | "loop_route";
+  pattern: string;
+  intent: string;
+};
 
 export async function getRoute(
   origin: [number, number],
   moodText: string,
-  options?: { signal?: AbortSignal; forceNightMode?: boolean }
-): Promise<RouteApiResponse> {
+  options?: { signal?: AbortSignal; forceNightMode?: boolean; preflight?: boolean }
+): Promise<RouteApiResponse | PreflightResponse> {
   const body: Record<string, unknown> = {
     origin,
     moodText: moodText.trim(),
   };
   if (options?.forceNightMode === true) body.forceNightMode = true;
+  if (options?.preflight === true) body.preflight = true;
   const res = await fetch("/api/route", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -217,6 +193,15 @@ export async function getRoute(
   }
 
   const data = await res.json();
+
+  // Preflight: only parse result for loading message
+  if (data && data.actionType != null && (data.actionType === "place_search" || data.actionType === "route" || data.actionType === "loop_route")) {
+    return {
+      actionType: data.actionType,
+      pattern: data.pattern ?? "mood_only",
+      intent: data.intent ?? "calm",
+    } as PreflightResponse;
+  }
 
   // Check edge case first (no route, special UI message)
   if (data && data.edge_case === true) {
