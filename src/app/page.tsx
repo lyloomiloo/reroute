@@ -733,7 +733,6 @@ function PageContent() {
                     : loadingPhase === 1
                       ? "searching the web..."
                       : "almost there..."}
-                  {".".repeat(loadingDots)}
                 </p>
               </div>
             )}

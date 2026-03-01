@@ -3680,7 +3680,7 @@ export async function POST(req: NextRequest) {
               // When user has an area (e.g. "wine bar in Born") but searchCenter is still origin, geocode area and use as center
               const hasArea = !!parsedArea;
               if (hasArea && searchCenter[0] === originCoords[0] && searchCenter[1] === originCoords[1]) {
-                const areaFallback = getFallbackCoordsForDestination(parsedArea);
+                const areaFallback = parsedArea ? getFallbackCoordsForDestination(parsedArea) : null;
                 if (areaFallback) {
                   searchCenter = areaFallback;
                 } else {
