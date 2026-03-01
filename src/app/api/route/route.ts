@@ -4406,7 +4406,7 @@ export async function POST(req: NextRequest) {
                   places: placeOptionsMain,
                   detectedQualifier: verificationMain.qualifierSearched ?? null,
                   detectedSubjective,
-                  didBroaden,
+                  didBroaden: false,
                   poiSearchRadius,
                   contentKeywords: contentKeywordsMain,
                 });
