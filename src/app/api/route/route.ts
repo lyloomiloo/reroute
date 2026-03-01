@@ -75,11 +75,15 @@ const ORS_WEIGHTINGS: Record<string, { green?: number; quiet?: number }> = {
   quick:    {},
 };
 
-/** Check if it's currently after dark in Barcelona */
+/** Check if it's currently after dark in Barcelona (Europe/Madrid). Use formatter hour so server UTC doesn't mis-parse. */
 function isAfterDarkInBarcelona(): boolean {
-  const barcelonaHour = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Europe/Madrid" })
-  ).getHours();
+  const barcelonaHourStr = new Date().toLocaleString("en-US", {
+    timeZone: "Europe/Madrid",
+    hour: "numeric",
+    hour12: false,
+  });
+  const barcelonaHour = parseInt(barcelonaHourStr, 10);
+  if (Number.isNaN(barcelonaHour)) return false;
   return SIMULATE_NIGHT || barcelonaHour >= 21 || barcelonaHour < 6;
 }
 
@@ -797,17 +801,29 @@ function scoreRoute(
 // =============================================================
 // BUILD ROUTE SUMMARY
 // =============================================================
+/** Filter out night-only (lighting) tags when it's daytime. Use for both recommended and quick route tags. */
+function filterLightingTagsForDaytime(tags: string[]): string[] {
+  if (tags.length === 0) return tags;
+  const lightingPatterns = [
+    "well-lit",
+    "well lit",
+    "lit streets",
+    "lighting",
+    "illuminated",
+    "bright streets",
+    "street lights",
+  ];
+  return tags.filter((tag) => {
+    const lower = tag.toLowerCase();
+    return !lightingPatterns.some((p) => lower.includes(p));
+  });
+}
+
 function buildSummary(duration: number, distance: number, tags: string[], intent: Intent, nightMode?: boolean): string {
   // Filter out night-only (lighting) tags when it's daytime — they're irrelevant and waste a slot
   let filteredTags = tags;
   if (!nightMode && tags.length > 0) {
-    filteredTags = tags.filter(
-      (tag) =>
-        !tag.toLowerCase().includes("well-lit") &&
-        !tag.toLowerCase().includes("well lit") &&
-        !tag.toLowerCase().includes("lighting") &&
-        !tag.toLowerCase().includes("illuminated")
-    );
+    filteredTags = filterLightingTagsForDaytime(tags);
   }
   if (intent === "quick" && !nightMode) {
     return "direct route";
@@ -827,6 +843,72 @@ function buildSummary(duration: number, distance: number, tags: string[], intent
     return "well-lit streets · busy corridors";
   }
   return "pleasant route";
+}
+
+/** Distance in meters between two points (Haversine). Coords are [lng, lat] (GeoJSON). */
+function distanceMeters(a: [number, number], b: [number, number]): number {
+  const [lng1, lat1] = a;
+  const [lng2, lat2] = b;
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+/** Min distance in meters from point to any vertex of the path. Path is [lng, lat][]. */
+function minDistanceToPath(point: [number, number], path: [number, number][]): number {
+  if (path.length === 0) return Infinity;
+  let min = Infinity;
+  for (let i = 0; i < path.length; i++) {
+    const d = distanceMeters(point, path[i]);
+    if (d < min) min = d;
+  }
+  return min;
+}
+
+/** Overlap ratio 0–1: fraction of points on each path that lie within threshold meters of the other path. */
+const PATH_OVERLAP_THRESHOLD_M = 25;
+
+function calculatePathOverlap(
+  coordsA: [number, number][],
+  coordsB: [number, number][]
+): number {
+  if (coordsA.length === 0 || coordsB.length === 0) return 0;
+  let onA = 0;
+  for (let i = 0; i < coordsA.length; i++) {
+    if (minDistanceToPath(coordsA[i], coordsB) <= PATH_OVERLAP_THRESHOLD_M) onA++;
+  }
+  let onB = 0;
+  for (let i = 0; i < coordsB.length; i++) {
+    if (minDistanceToPath(coordsB[i], coordsA) <= PATH_OVERLAP_THRESHOLD_M) onB++;
+  }
+  const ratioA = onA / coordsA.length;
+  const ratioB = onB / coordsB.length;
+  return (ratioA + ratioB) / 2;
+}
+
+/** Efficiency-focused tags for the quick/fastest route: what you gain (time) and what you trade off (busier, less green). */
+function getQuickRouteSummary(
+  quickRoute: { duration: number; distance: number; breakdown?: { noise?: number; green?: number } },
+  recommendedRoute: { duration: number },
+  isNight?: boolean
+): string {
+  const tags: string[] = ["direct route"];
+  const savedSec = recommendedRoute.duration - quickRoute.duration;
+  if (savedSec >= 60) {
+    const savedMins = Math.round(savedSec / 60);
+    tags.push(`saves ${savedMins} min`);
+  }
+  const breakdown = quickRoute.breakdown ?? {};
+  const noise = breakdown.noise ?? 0;
+  const green = breakdown.green ?? 0;
+  if (noise > 0.6) tags.push("busier streets");
+  if (green < 0.3) tags.push("less greenery");
+  const filtered = isNight ? tags : filterLightingTagsForDaytime(tags);
+  return filtered.slice(0, 3).join(" · ");
 }
 
 // =============================================================
@@ -997,6 +1079,17 @@ function clampWaypointToBarcelona(wp: [number, number]): [number, number] {
   return [
     Math.max(BCN_BBOX_RANDOM.minLat, Math.min(BCN_BBOX_RANDOM.maxLat, wp[0])),
     Math.max(BCN_BBOX_RANDOM.minLng, Math.min(BCN_BBOX_RANDOM.maxLng, wp[1])),
+  ];
+}
+
+/** Clamp [lat, lng] to an area bbox (e.g. Poble Nou) so loop waypoints stay inside the area. */
+function clampWaypointToBbox(
+  wp: [number, number],
+  bbox: { minLat: number; maxLat: number; minLng: number; maxLng: number }
+): [number, number] {
+  return [
+    Math.max(bbox.minLat, Math.min(bbox.maxLat, wp[0])),
+    Math.max(bbox.minLng, Math.min(bbox.maxLng, wp[1])),
   ];
 }
 
@@ -2009,6 +2102,44 @@ async function fetchSerpApiResults(query: string): Promise<SerpApiCachedShape> {
 const WEB_SEARCH_CACHE_TTL_DAYS = 7;
 const WEB_SEARCH_CACHE_TTL_MS = WEB_SEARCH_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
 
+/** Generic search_cache table (query_key, results text, created_at). Used for full response, places, and verify caches. */
+const SEARCH_CACHE_TABLE = "search_cache";
+const FULL_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const PLACES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const VERIFY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+async function getSearchCache<T>(queryKey: string, ttlMs: number): Promise<T | null> {
+  if (!supabase) return null;
+  try {
+    const { data: cached } = await supabase
+      .from(SEARCH_CACHE_TABLE)
+      .select("results, created_at")
+      .eq("query_key", queryKey)
+      .maybeSingle();
+    if (cached?.results != null && cached.created_at) {
+      const createdAt = new Date(cached.created_at).getTime();
+      if (Date.now() - createdAt < ttlMs) return JSON.parse(cached.results as string) as T;
+    }
+  } catch (e) {
+    console.warn("[search-cache] get error:", queryKey, e);
+  }
+  return null;
+}
+
+function setSearchCacheFireAndForget(queryKey: string, results: unknown): void {
+  if (!supabase) return;
+  Promise.resolve(
+    supabase
+      .from(SEARCH_CACHE_TABLE)
+      .upsert(
+        { query_key: queryKey, results: JSON.stringify(results), created_at: new Date().toISOString() },
+        { onConflict: "query_key" }
+      )
+  )
+    .then(() => console.log(`[search-cache] STORED: ${queryKey.substring(0, 60)}...`))
+    .catch((err) => console.error("[search-cache] Store error:", err));
+}
+
 /** Fetch web search results with Supabase cache. Cache key: placeName::query. TTL 7 days. */
 async function cachedWebSearch(query: string, placeName: string): Promise<SerpApiCachedShape> {
   const queryKey = `${(placeName ?? "").toLowerCase().trim()}::${(query ?? "").toLowerCase().trim()}`;
@@ -2123,6 +2254,19 @@ async function runQualifierVerification(
     };
   }
 
+  // Skip verification for general place-type-only queries (e.g. "find me a cafe") — no feature/specific qualifier to verify.
+  const generalPlaceOnly = /^(cafe|cafes|restaurant|restaurants|bar|bars|bakery|coffee|coffee shop)s?$/i.test(detectedQualifier.replace(/-/g, " ").trim());
+  if (generalPlaceOnly) {
+    return {
+      places,
+      verification_method: "places_data",
+      fallbackMessage: null,
+      qualifierSearched: detectedQualifier,
+      verificationSummary: null,
+      usedTierCWebSearch: false,
+    };
+  }
+
   if (isLaptopWorkStudyQualifier(detectedQualifier)) {
     const filtered = places.filter((p) => !isLaptopIncompatiblePlace(p));
     if (filtered.length < places.length) {
@@ -2135,7 +2279,29 @@ async function runQualifierVerification(
   // Tier B: LLM-based semantic verification (replaces keyword matching — catches "dog lover" → pet-friendly etc.)
   const apiKey = process.env.OPENAI_API_KEY;
   if (detectedQualifier && places.length > 0 && apiKey) {
-    const placeTexts = places.slice(0, 10).map((p) => {
+    const placesToVerify = places.slice(0, 10);
+    const qualifierKey = (detectedQualifier ?? "general").toLowerCase().replace(/\s+/g, "-");
+    const cachedVerifyResults = await Promise.all(
+      placesToVerify.map((p) =>
+        getSearchCache<{ matches: boolean; reason?: string }>(
+          `verify:${(p.place_id ?? p.name ?? "").toString()}:${qualifierKey}`,
+          VERIFY_CACHE_TTL_MS
+        )
+      )
+    );
+    const allCached = cachedVerifyResults.every((c) => c != null);
+    if (allCached && cachedVerifyResults.length === placesToVerify.length) {
+      placesToVerify.forEach((p, i) => {
+        const c = cachedVerifyResults[i];
+        if (c) {
+          p.qualifierVerified = c.matches;
+          p.qualifierReason = c.reason ?? null;
+          p.qualifierSource = c.matches ? "ai_review" : null;
+        }
+      });
+      console.log("[verify-cache] HIT: all", placesToVerify.length, "places for", qualifierKey);
+    } else {
+    const placeTexts = placesToVerify.map((p) => {
       const reviewTexts = (p.reviews ?? [])
         .map((r: { text?: { text?: string } }) => r.text?.text ?? "")
         .filter(Boolean)
@@ -2197,6 +2363,11 @@ Return JSON only: {"results": [{"index": 0, "matches": true, "reason": "short re
             p.qualifierVerified = result.matches;
             p.qualifierReason = result.reason ?? null;
             p.qualifierSource = result.matches ? "ai_review" : null;
+            const placeId = p.place_id ?? p.name ?? "";
+            setSearchCacheFireAndForget(`verify:${placeId}:${qualifierKey}`, {
+              matches: result.matches,
+              reason: result.reason ?? undefined,
+            });
           }
         }
         const beforeExclude = places.length;
@@ -2215,6 +2386,7 @@ Return JSON only: {"results": [{"index": 0, "matches": true, "reason": "short re
       }
     } catch (e) {
       console.log("[verify] LLM verification failed:", e);
+    }
     }
   }
   if (detectedQualifier) {
@@ -2248,10 +2420,14 @@ Return JSON only: {"results": [{"index": 0, "matches": true, "reason": "short re
     };
   }
 
-  // Tier C: Web search for unverified places (up to 5) — SerpAPI. Only for feature/specific qualifiers where web proof matters.
-  const needsWebSearch =
+  // Tier C: Web search for unverified places (up to 5) — SerpAPI. Only for feature qualifiers or specific products; skip for general place types (e.g. "find me a cafe").
+  const isFeatureOrSpecificQualifier =
     detectedQualifier &&
-    /laptop|pet.?friendly|dog.?friendly|vegan|gluten.?free|halal|wheelchair|kid.?friendly|matcha|specific product/i.test(detectedQualifier);
+    /laptop|pet.?friendly|dog.?friendly|vegan|gluten.?free|halal|wheelchair|kid.?friendly|matcha|specific product|wifi|work.?friendly|outdoor|terrace/i.test(detectedQualifier);
+  const isGeneralPlaceTypeOnly =
+    detectedQualifier &&
+    /^(cafe|cafes|restaurant|restaurants|bar|bars|bakery|coffee|coffee shop)s?$/i.test(detectedQualifier.replace(/-/g, " ").trim());
+  const needsWebSearch = isFeatureOrSpecificQualifier && !isGeneralPlaceTypeOnly;
   if (detectedQualifier && verifiedCount < 2 && needsWebSearch) {
     console.log(`[verify] Tier C — SerpAPI web search for "${detectedQualifier}"`);
 
@@ -2271,11 +2447,11 @@ Return JSON only: {"results": [{"index": 0, "matches": true, "reason": "short re
               snippets.includes(detectedQualifier) ||
               snippets.includes(detectedQualifier.replace(/-/g, " "));
             if (!matches) return { place, verified: false as const, reason: null };
-            const descriptiveReason = await extractWebVerificationLabel(place.name, detectedQualifier, snippets);
+            // Use static label to avoid per-place GPT call (saves latency / avoids timeout)
             return {
               place,
               verified: true as const,
-              reason: descriptiveReason || "MENTIONED IN WEB RESULTS",
+              reason: "MENTIONED IN WEB RESULTS",
             };
           } catch (err) {
             console.log(`[verify] Tier C failed for "${place.name}":`, err);
@@ -2577,7 +2753,26 @@ async function searchPlace(
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_PLACES_API_KEY not set");
   const radiusBarcelona = Math.min(radiusMeters, 4000);
-
+  const placesCacheKey = `places:${(query ?? "").toLowerCase().trim()}:${Math.round(nearLat * 100)}:${Math.round(nearLng * 100)}:${radiusBarcelona}`;
+  let data: {
+    places?: Array<{
+      id?: string;
+      displayName?: { text?: string };
+      formattedAddress?: string;
+      location?: { latitude?: number; longitude?: number };
+      rating?: number | null;
+      editorialSummary?: { text?: string } | null;
+      photos?: Array<{ name?: string }>;
+      primaryType?: string;
+      reviewSummary?: { text?: string } | null;
+      userRatingCount?: number | null;
+      priceLevel?: number | null;
+      currentOpeningHours?: { openNow?: boolean };
+    }>;
+  } | null = await getSearchCache(placesCacheKey, PLACES_CACHE_TTL_MS);
+  if (data != null) {
+    console.log("[places-cache] HIT:", placesCacheKey.substring(0, 60));
+  } else {
   let res: Response;
   try {
     const fieldMask =
@@ -2598,7 +2793,7 @@ async function searchPlace(
             radius: Math.max(500, Math.min(50000, radiusBarcelona)),
           },
         },
-        maxResultCount: Math.min(10, Math.max(1, maxResults)),
+        maxResultCount: Math.min(8, Math.max(1, maxResults)),
       }),
     });
   } catch (e) {
@@ -2611,29 +2806,21 @@ async function searchPlace(
     console.log("[places] searchText FAILED:", res.status, errBody);
     return [];
   }
-  const data = (await res.json()) as {
-    places?: Array<{
-      id?: string;
-      displayName?: { text?: string };
-      formattedAddress?: string;
-      location?: { latitude?: number; longitude?: number };
-      rating?: number | null;
-      editorialSummary?: { text?: string } | null;
-      photos?: Array<{ name?: string }>;
-      primaryType?: string;
-      reviewSummary?: { text?: string } | null;
-      userRatingCount?: number | null;
-      priceLevel?: number | null;
-      currentOpeningHours?: { openNow?: boolean };
-    }>;
-  };
+  data = (await res.json()) as typeof data;
+  setSearchCacheFireAndForget(placesCacheKey, data);
+  }
+  if (data == null) return [];
   console.log("[places] searchText query:", query, "found:", (data.places ?? []).length, "results");
   let places = data.places ?? [];
-  // For cafe-like searches, filter out gift shops and non-cafe venue types (S4)
-  const isCafeLikeQuery = /\bcafe\b|coffee\s*shop|coffeehouse|bakery|cafeteria|espresso|find me a cafe/i.test(query);
+  // For cafe-like searches, filter out gift shops and non-cafe venue types (P6)
+  const isCafeLikeQuery = /\bcafe\b|cafes|coffee\s*shop|coffeehouse|bakery|cafeteria|espresso|find me a cafe|coffee\b/i.test(query);
   if (isCafeLikeQuery && places.length > 0) {
-    const cafeTypes = ["cafe", "coffee_shop", "bakery", "restaurant", "bar", "espresso_bar"];
-    const excludeTypes = ["gift_shop", "store", "clothing_store", "souvenir_shop", "book_store", "home_goods_store", "shopping_mall"];
+    const cafeTypes = ["cafe", "coffee_shop", "bakery", "restaurant", "bar", "espresso_bar", "cafeteria"];
+    const excludeTypes = [
+      "gift_shop", "store", "clothing_store", "souvenir_shop", "book_store", "home_goods_store",
+      "shopping_mall", "convenience_store", "supermarket", "department_store", "furniture_store",
+      "jewelry_store", "shoe_store", "florist", "hardware_store",
+    ];
     places = places.filter((place) => {
       const type = (place.primaryType ?? "").toLowerCase();
       const isExcluded = excludeTypes.some((t) => type.includes(t));
@@ -3565,13 +3752,20 @@ export async function POST(req: NextRequest) {
         ? true
         : bodyForceNightMode === false
           ? false
-          : SIMULATE_NIGHT ||
-            (() => {
-              const h = new Date(
-                new Date().toLocaleString("en-US", { timeZone: "Europe/Madrid" })
-              ).getHours();
-              return h >= 21 || h < 6;
-            })();
+          : isAfterDarkInBarcelona();
+    const barcelonaHourStr = new Date().toLocaleString("en-US", {
+      timeZone: "Europe/Madrid",
+      hour: "numeric",
+      hour12: false,
+    });
+    const barcelonaHour = parseInt(barcelonaHourStr, 10);
+    console.log("[route] Night check:", {
+      currentHour: new Date().getHours(),
+      barcelonaHour: Number.isNaN(barcelonaHour) ? null : barcelonaHour,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      isNight,
+      forceNightMode: bodyForceNightMode,
+    });
 
     let intent: Intent = "calm";
     let destCoords: [number, number] | null = null;
@@ -3706,8 +3900,9 @@ export async function POST(req: NextRequest) {
         console.log(`[route] Parsed: pattern=${pattern}, intent=${intent}, poi_focus=${poi_focus}, skip_duration=${skipDuration}, is_loop=${isLoop}, poi_search_terms=${JSON.stringify(poi_search_terms)}, suggested_duration=${suggestedDuration}, target_km=${targetDistanceKm}, max_mins=${maxDurationMinutes}`);
 
         if (bodyPreflight === true) {
+          // Match loading messages to actual work: place search → "Reading reviews..."; route/loop → "Mapping your route..."
           const actionType: "place_search" | "route" | "loop_route" =
-            pattern === "mood_and_poi"
+            pattern === "mood_and_poi" || poi_focus
               ? "place_search"
               : pattern === "mood_only" || pattern === "themed_walk"
                 ? "loop_route"
@@ -3958,7 +4153,7 @@ export async function POST(req: NextRequest) {
               console.log("[sort] Checking moodText for subjective qualifier:", moodLower, "detected:", detectedSubjective);
 
               let poiSearchQuery = parsedPoiQuery;
-              let maxSearchResults = 10;
+              let maxSearchResults = 8;
               let qualifierBaseType: string | null = null;
               if (detectedQualifier != null) {
                 qualifierBaseType = parsedPoiQuery != null ? PLACE_TYPE_KEYWORDS.find((kw) => parsedPoiQuery!.toLowerCase().includes(kw)) ?? null : null;
@@ -3976,6 +4171,17 @@ export async function POST(req: NextRequest) {
               if (excludePlaceIds.size > 0) {
                 console.log("[route] exclude_place_ids:", excludePlaceIds.size, "IDs (will filter from load-more results)");
               }
+
+              // Full response cache (1hr): same query + location → return cached place_options response
+              if (searchOffsetNum === 0) {
+                const fullCacheKey = `full:${String(moodText ?? "").toLowerCase().trim()}:${Math.round(searchLat * 100)}:${Math.round(searchLng * 100)}`;
+                const fullCached = await getSearchCache<Record<string, unknown>>(fullCacheKey, FULL_CACHE_TTL_MS);
+                if (fullCached != null) {
+                  console.log("[full-cache] HIT:", fullCacheKey);
+                  return NextResponse.json(fullCached);
+                }
+              }
+
               if (searchOffsetNum > 0) {
                 const largerRadius = Math.min(poiSearchRadius * 2, 8000);
                 const refreshQueries = buildRefreshQueries(poi_search_terms, parsedPoiQuery ?? null);
@@ -4143,88 +4349,6 @@ export async function POST(req: NextRequest) {
                 }
                 places = allPlaces.slice(0, maxSearchResults);
               }
-              let fallbackMessage: string | null = null;
-              let didBroaden = false;
-              // Save results from first/specific search so we can prepend them after any broadening
-              let originalPlaces: PlaceOptionResult[] = places.length > 0 ? [...places] : [];
-              if (places.length < 2 && parsedPoiQuery) {
-                const originalQuery = parsedPoiQuery;
-                console.log("[places] Original specific results (before retry):", places.map((p) => p.name));
-                // Try 1: Same query, wider radius (15km) — sometimes Google Places just needs more space
-                console.log(`[route] POI retry with wider radius: "${originalQuery}"`);
-                const retryPlaces = await searchPlace(originalQuery, searchLat, searchLng, maxSearchResults, 15000);
-                console.log("[DEBUG-MERGE] Retry (wider radius):", retryPlaces.map((p) => p.name));
-
-                if (retryPlaces.length < 2) {
-                  // Try 2: Broaden to base type — merge: originals first, then broader (deduped)
-                  const placeTypeKeywords = ["cafe", "cafes", "restaurant", "bar", "bakery", "bookshop", "gym", "pharmacy", "museum", "gallery", "library"];
-                  const baseType = placeTypeKeywords.find((kw) => originalQuery.toLowerCase().includes(kw));
-                  if (baseType) {
-                    const broaderQuery = `${baseType} Barcelona`;
-                    console.log(`[route] POI broadening: "${originalQuery}" → "${broaderQuery}"`);
-                    const broaderResults = await searchPlace(broaderQuery, searchLat, searchLng, maxSearchResults, poiSearchRadius);
-                    console.log("[DEBUG-MERGE] Broader search:", broaderResults.map((p) => p.name));
-                    const existingIds = new Set(originalPlaces.map((p) => p.place_id ?? p.name));
-                    const newFromBroader = broaderResults.filter((p) => !existingIds.has(p.place_id ?? p.name));
-                    places = [...originalPlaces, ...newFromBroader];
-                    console.log("[DEBUG-MERGE] Merged total (originals first):", places.map((p) => p.name));
-                    didBroaden = true;
-                    if (places.length > 0) {
-                      const apiKey = process.env.OPENAI_API_KEY;
-                      if (apiKey) {
-                        try {
-                          const res = await fetch("https://api.openai.com/v1/chat/completions", {
-                            method: "POST",
-                            headers: {
-                              Authorization: `Bearer ${apiKey}`,
-                              "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({
-                              model: "gpt-4o-mini",
-                              max_tokens: 60,
-                              messages: [
-                                {
-                                  role: "system",
-                                  content: "You write short, friendly one-sentence messages for a walking app. Be honest and helpful. Never use emojis.",
-                                },
-                                {
-                                  role: "user",
-                                  content: `The user searched for "${typeof moodText === "string" ? moodText : originalQuery}". We couldn't find results matching that specifically, so we broadened to nearby ${baseType}s. Write a short explanation (1 sentence, under 15 words).`,
-                                },
-                              ],
-                            }),
-                          });
-                          if (res.ok) {
-                            const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-                            fallbackMessage = data.choices?.[0]?.message?.content?.trim() ?? null;
-                          }
-                        } catch {
-                          // keep fallbackMessage null
-                        }
-                      }
-                    }
-                  }
-                } else {
-                  // Retry returned enough results — use them
-                  places = retryPlaces;
-                }
-              }
-              // When we broadened, keep original specific results at the front; dedup by place_id (or name)
-              if (didBroaden && originalPlaces.length > 0) {
-                const originalIds = new Set(originalPlaces.map((p) => p.place_id ?? p.name));
-                const newFromBroadened = places.filter((p) => !originalIds.has(p.place_id ?? p.name));
-                places = [...originalPlaces, ...newFromBroadened];
-                console.log("[places] Prepended originals:", originalPlaces.map((p) => p.name), "total:", places.length);
-              } else if (didBroaden && parsedPoiQuery) {
-                // No original results to prepend; prioritize by keyword match
-                const keywords = parsedPoiQuery.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
-                const desc = (p: PlaceOptionResult) => (p.description ?? "").toLowerCase();
-                places.sort((a, b) => {
-                  const aMatch = keywords.some((kw) => a.name.toLowerCase().includes(kw) || desc(a).includes(kw)) ? 1 : 0;
-                  const bMatch = keywords.some((kw) => b.name.toLowerCase().includes(kw) || desc(b).includes(kw)) ? 1 : 0;
-                  return bMatch - aMatch; // matches first
-                });
-              }
               sortLabel = applySubjectiveSortAndLabel(places, typeof moodText === "string" ? moodText : null);
               if (sortLabel == null && detectedQualifier != null) {
                 const base = parsedPoiQuery != null ? PLACE_TYPE_KEYWORDS.find((kw) => parsedPoiQuery!.toLowerCase().includes(kw)) : undefined;
@@ -4291,7 +4415,7 @@ export async function POST(req: NextRequest) {
                 console.log("[response] Building place_options from (same array as map pins):", placeOptionsMain.slice(0, 5).map((p) => p.name));
                 console.log("[places] Returning place_options, objective?", isObjectiveBasedSearch(parsedPoiQuery, typeof moodText === "string" ? moodText : null), "query:", parsedPoiQuery, "moodText:", typeof moodText === "string" ? moodText.substring(0, 50) : null);
                 const placeOptionsWithTags = ensureRelevanceTag(placeOptionsMain, intent, String(moodText ?? ""));
-                return NextResponse.json({
+                const fullPayload = {
                   place_options: placeOptionsWithTags,
                   needs_place_selection: true,
                   actionType: "place_search" as const,
@@ -4303,7 +4427,10 @@ export async function POST(req: NextRequest) {
                   sort_label: sortLabelMainFinal ?? null,
                   verification_summary: verificationSummaryMain ?? null,
                   used_web_search: verificationMain.usedTierCWebSearch,
-                });
+                };
+                const fullCacheKey = `full:${String(moodText ?? "").toLowerCase().trim()}:${Math.round(searchLat * 100)}:${Math.round(searchLng * 100)}`;
+                setSearchCacheFireAndForget(fullCacheKey, fullPayload);
+                return NextResponse.json(fullPayload);
               }
               if (places.length === 1) {
                 destCoords = [places[0].lat, places[0].lng];
@@ -4967,14 +5094,14 @@ export async function POST(req: NextRequest) {
       const targetKm = duration * WALK_SPEED_KM_PER_MIN * 0.75;
       console.log("[route] MOOD_ONLY:", { intent, duration, isLoop });
       const { index } = await loadStreetData();
-      // When loop + area (e.g. "Tibidabo walk"), start the loop from the area center so the route stays in that area
+      // When loop + area (e.g. "Tibidabo walk", "discovery walk in Poble Nou"), start the loop from the area center and constrain waypoints to the area.
       let loopOrigin: [number, number] = [...originCoords];
+      const loopAreaBbox = parsedArea ? getAreaBbox(parsedArea) : null;
       if (isLoop && parsedArea) {
-        const areaBbox = getAreaBbox(parsedArea);
-        if (areaBbox) {
+        if (loopAreaBbox) {
           loopOrigin = [
-            (areaBbox.minLat + areaBbox.maxLat) / 2,
-            (areaBbox.minLng + areaBbox.maxLng) / 2,
+            (loopAreaBbox.minLat + loopAreaBbox.maxLat) / 2,
+            (loopAreaBbox.minLng + loopAreaBbox.maxLng) / 2,
           ];
         } else {
           const geo = await geocodePlace(parsedArea);
@@ -5020,7 +5147,8 @@ export async function POST(req: NextRequest) {
           const sign = attempt === 0 ? 1 : attempt === 1 ? -1 : 1;
           const diagonal = attempt === 2;
           const bearing = (Math.random() * 360 + bearingOffset) % 360;
-          const wp = clampWaypointToBarcelona(waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, bearing));
+          let wp = clampWaypointToBarcelona(waypointFromBearing(loopOrigin[0], loopOrigin[1], outboundM, bearing));
+          if (loopAreaBbox) wp = clampWaypointToBbox(wp, loopAreaBbox);
           try {
             const outRoutes = await fetchOrsRoutes(loopOrigin, wp, intent, forceAvoidZones);
             if (!outRoutes[0]) continue;
@@ -5065,7 +5193,7 @@ export async function POST(req: NextRequest) {
             loopOrigin[1],
             index,
             MAX_ROUTE_DISTANCE_M,
-            null
+            loopAreaBbox
           );
         }
       } else {
@@ -5084,7 +5212,7 @@ export async function POST(req: NextRequest) {
             loopOrigin[1],
             index,
             MAX_ROUTE_DISTANCE_M,
-            null
+            loopAreaBbox
           );
         }
       }
@@ -5484,7 +5612,11 @@ export async function POST(req: NextRequest) {
       distance: quickRaw.distance,
       score: quickScore,
       breakdown: quickBreakdown,
-      summary: buildSummary(quickRaw.duration, quickRaw.distance, quickTags, "quick", isNight),
+      summary: getQuickRouteSummary(
+        { duration: quickRaw.duration, distance: quickRaw.distance, breakdown: quickBreakdown },
+        { duration: recommended.duration },
+        isNight
+      ),
     };
 
     const poiPoints = loadPoiData();
@@ -5573,18 +5705,28 @@ export async function POST(req: NextRequest) {
     let qDuration = Math.min(quick.duration, MAX_ROUTE_DURATION_MIN * 60);
     let qDistance = Math.min(quick.distance, MAX_ROUTE_DISTANCE_M);
 
-    // Replace template summaries with intent-aware tags when we have mood text (fallback to template on failure).
+    // Replace template summaries: prefer route-derived tags (street character) so sub-description describes the experience, not the query.
     const fallbackTags = recommended.summary ? recommended.summary.split(" · ").filter(Boolean).slice(0, 3) : [];
     let recommendedSummary = recommended.summary;
     let quickSummary = quick.summary;
     const moodTextStr = typeof moodText === "string" ? moodText.trim() : "";
     if (moodTextStr) {
       try {
-        const intentTags = await generateRouteDescriptionTags(intent as Intent, moodTextStr, fallbackTags);
-        if (intentTags.length >= 3) {
-          recommendedSummary = buildSummary(recDuration, recDistance, intentTags, intent as Intent, isNight);
-          quickSummary = buildSummary(qDuration, qDistance, intentTags, intent as Intent, isNight);
+        // Use segment-based route tags when available so headline/sub-description describe route character (e.g. "Via quiet streets and tree-lined paths"), not the query.
+        const { tags: routeTags } = scoreRoute(recommended.coordinates, intent as Intent, index);
+        const tagsForSummary =
+          routeTags.length >= 2
+            ? (!isNight ? filterLightingTagsForDaytime(routeTags) : routeTags)
+            : await generateRouteDescriptionTags(intent as Intent, moodTextStr, fallbackTags);
+        if (tagsForSummary.length >= 2) {
+          recommendedSummary = buildSummary(recDuration, recDistance, tagsForSummary, intent as Intent, isNight);
         }
+        // Quick route always gets efficiency/tradeoff tags, not mood tags
+        quickSummary = getQuickRouteSummary(
+          { duration: qDuration, distance: qDistance, breakdown: quick.breakdown },
+          { duration: recDuration },
+          isNight
+        );
       } catch {
         // keep template summaries
       }
@@ -5673,7 +5815,10 @@ export async function POST(req: NextRequest) {
       ...(quickPois && quickPois.length > 0 && { pois: quickPois }),
     };
 
-    const routesAreSimilar = Math.abs(recommended.duration - quick.duration) < 60;
+    // Routes are similar only if BOTH duration AND path are nearly identical
+    const durationSimilar = Math.abs(recommended.duration - quick.duration) < 30;
+    const pathOverlap = calculatePathOverlap(recommended.coordinates, quick.coordinates);
+    const routesAreSimilar = durationSimilar && pathOverlap > 0.85;
 
     return NextResponse.json({
       recommended: defaultToFastest ? quickPayload : recommendedPayload,

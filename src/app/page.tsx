@@ -800,9 +800,7 @@ function PageContent() {
                   const showAlternative =
                     alt &&
                     main &&
-                    routes.pattern !== "mood_and_area" &&
-                    Math.abs(alt.duration - main.duration) > 60 &&
-                    Math.abs(alt.distance - main.distance) > 100;
+                    routes.pattern !== "mood_and_area";
                   return showAlternative
                     ? showQuick
                       ? main.coordinates
@@ -908,8 +906,13 @@ function PageContent() {
                           routes.pattern === "mood_and_area" ? (
                             <p className="font-mono text-sm text-gray-500 mt-2">
                               {active.summary
-                                ? `VIA ${active.summary.replace(/\s*·\s*/g, " AND ").toUpperCase()}`
-                                : `WALK IN ${routes.destination_name}`}
+                                ? (() => {
+                                    const parts = active.summary.split(" · ").map((s) => s.trim()).filter(Boolean);
+                                    if (parts.length >= 2) return `Via ${parts[0]} and ${parts[1]}`;
+                                    if (parts.length === 1) return `Via ${parts[0]}`;
+                                    return `${Math.round(active.duration / 60)} min walk`;
+                                  })()
+                                : `Walk in ${routes.destination_name}`}
                             </p>
                           ) : (
                             <button
@@ -927,46 +930,31 @@ function PageContent() {
                         <p className="font-mono text-xs text-gray-400">
                           {formatDuration(active.duration)} · {formatDistance(active.distance)}
                         </p>
+                        {routes?.quick && routes.recommended && routes.pattern !== "mood_and_area" && routes.pattern !== "mood_only" && routes.pattern !== "themed_walk" && !routes.isLoop && (
+                          <div className="mt-2">
+                            {!showQuick ? (
+                              <button
+                                type="button"
+                                onClick={() => setShowQuick(true)}
+                                className="text-xs font-mono text-gray-400 underline underline-offset-4 hover:text-gray-600 uppercase tracking-wide"
+                              >
+                                Fastest route · {formatDuration(routes.quick.duration)}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setShowQuick(false)}
+                                className="text-xs font-mono text-gray-400 underline underline-offset-4 hover:text-gray-600 uppercase tracking-wide"
+                              >
+                                Recommended route
+                              </button>
+                            )}
+                          </div>
+                        )}
                         <p className="font-mono text-[9px] text-[#4A90D9] mt-2">
                           (RE)ROUTE IS IN BETA AND MAY MAKE SOME MISTAKES.
                         </p>
                         <div className="mt-4">
-                            {routes.quick &&
-                              (() => {
-                                const alt = routes.quick;
-                                const main = routes.recommended;
-                                const showAlternative =
-                                  main &&
-                                  routes.pattern !== "mood_and_area" &&
-                                  Math.abs(alt.duration - main.duration) > 60 &&
-                                  Math.abs(alt.distance - main.distance) > 100;
-                                return showAlternative ? (
-                                  <div className="mb-2">
-                                    {showQuick ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => setShowQuick(false)}
-                                        className="text-base text-gray-600 underline reroute-uppercase"
-                                      >
-                                        {routes.default_is_fastest ? "Use fastest route" : getUseRouteLabel(routes.intent)}
-                                      </button>
-                                    ) : (
-                                      <p className="text-base text-gray-500 reroute-uppercase">
-                                        {routes.default_is_fastest
-                                          ? `${getIntentRouteLabel(routes.intent)}: ${formatDuration(alt.duration)} — `
-                                          : `Fastest route: ${formatDuration(alt.duration)} — `}
-                                        <button
-                                          type="button"
-                                          onClick={() => setShowQuick(true)}
-                                          className="text-foreground underline"
-                                        >
-                                          Switch
-                                        </button>
-                                      </p>
-                                    )}
-                                  </div>
-                                ) : null;
-                              })()}
                             <div className="flex gap-2">
                               {(routes.pattern === "mood_and_area" || routes.pattern === "mood_only") && lastRouteMoodText.trim() && (
                             <button
