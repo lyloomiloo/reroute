@@ -1268,8 +1268,8 @@ function PageContent() {
                       {placeOptionsFallbackMessage}
                     </p>
                   ) : (
-                    <p className="font-mono text-xs text-blue-400 uppercase tracking-wide">
-                      BETA · RESULTS MAY NOT BE PERFECT · CHECK REVIEWS
+                    <p className="font-mono text-[9px] text-blue-400 uppercase tracking-wide whitespace-nowrap">
+                      BETA · RESULTS MAY VARY · CHECK REVIEWS
                     </p>
                   )}
 
@@ -1347,20 +1347,22 @@ function PageContent() {
                                 {place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`}
                               </span>
                             )}
-                            {/* 3. Description (2 lines) */}
-                            <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full mt-0.5">
-                              {place.description != null ? place.description.replace(/\.$/, "") : null}
-                            </p>
-                            <div className="mt-auto pt-1 flex flex-col gap-1">
-                              <p className="font-mono text-[10px] text-gray-400">
-                                {place.rating != null && (
-                                  <span>{place.rating.toFixed(1)} ★</span>
-                                )}
-                              </p>
+                            {/* 3. Description + rating (left) | GO button (right) */}
+                            <div className="mt-auto pt-1 flex flex-row items-center gap-2 min-h-0">
+                              <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full">
+                                  {place.description != null ? place.description.replace(/\.$/, "") : null}
+                                </p>
+                                <p className="font-mono text-[10px] text-gray-400 mt-0.5">
+                                  {place.rating != null && (
+                                    <span>{place.rating.toFixed(1)} ★</span>
+                                  )}
+                                </p>
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => handleRouteToPlace(place)}
-                                className="bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded flex-shrink-0 hover:opacity-90 w-full"
+                                className="flex-shrink-0 self-center bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded hover:opacity-90 min-w-[3rem]"
                               >
                                 GO
                               </button>
