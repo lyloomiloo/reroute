@@ -2266,7 +2266,7 @@ function simplifyPoiQueryForFallback(poiQuery: string): string | null {
 /** Build alternative Google Places queries for refresh/load-more so we don't re-run the same query. Uses poi_search_terms (synonyms) and avoids repeating the initial query. */
 function buildRefreshQueries(poi_search_terms: string[], initialPoiQuery: string | null): string[] {
   const initial = (initialPoiQuery ?? "").toLowerCase().trim();
-  const terms = [...new Set((poi_search_terms ?? []).filter((t) => typeof t === "string" && t.trim().length > 1).map((t) => t.trim().toLowerCase()))];
+  const terms = Array.from(new Set((poi_search_terms ?? []).filter((t) => typeof t === "string" && t.trim().length > 1).map((t) => t.trim().toLowerCase())));
   const queries: string[] = [];
   const seen = new Set<string>();
   const add = (q: string) => {
