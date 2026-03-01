@@ -1772,27 +1772,26 @@ async function generateSearchSummary(context: {
         messages: [
           {
             role: "system",
-            content: `You generate a short headline (4-8 words, UPPERCASE) that explains WHY these places were chosen or HOW they're ranked. Do NOT repeat the user's search query or category. Describe the quality signal or sorting criteria instead.
+            content: `You generate a short headline (maximum 4 words, UPPERCASE) that explains WHY these places were chosen or HOW they're ranked. Do NOT repeat the user's search query or category. Describe the quality signal or sorting criteria instead.
 
 Rules:
+- Maximum 4 words so it fits on one line on mobile. Examples: TOP MATCHA SPOTS, LAPTOP-FRIENDLY PICKS, HIDDEN GEM CAFES, VERIFIED PET-FRIENDLY SPOTS.
 - Do NOT include the city name (Barcelona, BCN, etc.) — the user already knows where they are.
 - Do NOT use the word "best" if the user's query already contained "best".
 - Tell the user something NEW: the quality signal, not the category.
 
-Examples by situation:
-- Sorted by rating: TOP RATED BY LOCALS
-- Hidden gems (high rating, fewer reviews): HIDDEN GEMS WORTH DISCOVERING
-- Relevance to a specific product (e.g. matcha): HIGHLY RATED FOR MATCHA
-- Verified by reviews: CONFIRMED IN RECENT REVIEWS
-- Sorted by price (value): BEST VALUE PICKS
-- Feature qualifier (e.g. pet-friendly): VERIFIED PET-FRIENDLY SPOTS
-- Laptop-friendly: VERIFIED LAPTOP-FRIENDLY SPOTS
+Examples (4 words or fewer):
+- Sorted by rating: TOP RATED PICKS
+- Matcha: TOP MATCHA SPOTS
+- Verified by reviews: CONFIRMED IN REVIEWS
+- Feature qualifier: LAPTOP-FRIENDLY PICKS or PET-FRIENDLY SPOTS
+- Hidden gems: HIDDEN GEM CAFES
 
 Reply with ONLY the headline in UPPERCASE, no quotes, no period.`,
           },
           {
             role: "user",
-            content: `${userHint}${contextLine}\n\nGenerate one headline (4-8 words, UPPERCASE). Do not repeat the search query.${userSaidBest ? " Do not use the word BEST." : ""}`,
+            content: `${userHint}${contextLine}\n\nGenerate one headline (maximum 4 words, UPPERCASE). Do not repeat the search query.${userSaidBest ? " Do not use the word BEST." : ""}`,
           },
         ],
       }),

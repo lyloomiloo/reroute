@@ -1250,7 +1250,7 @@ function PageContent() {
                 <div className="px-4 py-3">
                   <div className="flex justify-between items-center">
                     {/* Headline — either generated summary or default */}
-                    <h2 className="font-mono font-bold text-[1.29rem] tracking-tight uppercase leading-tight mb-0 pb-0">
+                    <h2 className="font-mono font-bold text-xl tracking-tight uppercase leading-tight mb-0 pb-0">
                       {placeOptionsSortLabel ?? placeOptionsHeading ?? "CHOOSE A PLACE"}
                     </h2>
                     <button
@@ -1268,7 +1268,7 @@ function PageContent() {
                       {placeOptionsFallbackMessage}
                     </p>
                   ) : (
-                    <p className="font-mono text-[11.7px] text-blue-400 uppercase tracking-wide whitespace-nowrap my-1.5">
+                    <p className="font-mono font-semibold text-[11.7px] text-blue-400 uppercase tracking-wide whitespace-nowrap my-1.5">
                       BETA · RESULTS MAY VARY · CHECK REVIEWS
                     </p>
                   )}
@@ -1332,22 +1332,28 @@ function PageContent() {
                           )}
 
                           <div className="flex-1 flex flex-col min-h-0 p-3">
-                            {/* 1. Place name — always first, bold */}
-                            <h3 className="font-mono font-bold text-sm line-clamp-1 min-h-[1.25em] mb-0.5 w-full text-gray-900">
-                              {place.name ?? "Place"}
-                            </h3>
-                            {/* 2. Feature qualifier tag (below name) */}
-                            {place.qualifierVerified && (place.qualifierReason ?? placeOptionsQualifierSearched) != null && (
-                              <span className="font-mono text-[10px] text-green-600 uppercase block">
-                                ✓ {place.qualifierReason ?? `${placeOptionsQualifierSearched} mentioned in ${place.qualifierSource === "web" ? "web results" : "reviews"}`}
-                              </span>
-                            )}
-                            {!place.qualifierVerified && placeOptionsQualifierSearched != null && (
-                              <span className="font-mono text-[10px] text-gray-400 uppercase block">
-                                {place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`}
-                              </span>
-                            )}
-                            {/* 3. Description + rating (left) | GO button (right) */}
+                            <div className="space-y-1">
+                              <h3 className="font-mono font-bold text-sm line-clamp-1 w-full text-gray-900">
+                                {place.name ?? "Place"}
+                              </h3>
+                              {(() => {
+                                const verifiedTag =
+                                  place.qualifierVerified && (place.qualifierReason ?? placeOptionsQualifierSearched) != null
+                                    ? `✓ ${place.qualifierReason ?? `${placeOptionsQualifierSearched} mentioned in ${place.qualifierSource === "web" ? "web results" : "reviews"}`}`
+                                    : null;
+                                const unverifiedTag =
+                                  !place.qualifierVerified && placeOptionsQualifierSearched != null
+                                    ? (place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`)
+                                    : null;
+                                const featureTagLine = verifiedTag ?? unverifiedTag;
+                                return featureTagLine != null ? (
+                                  <span className={`font-mono text-[10px] uppercase block ${verifiedTag != null ? "text-green-600" : "text-gray-400"}`}>
+                                    {featureTagLine}
+                                  </span>
+                                ) : null;
+                              })()}
+                            </div>
+                            {/* Description + rating (left) | GO button (right) */}
                             <div className="mt-auto pt-1 flex flex-row items-center gap-2 min-h-0">
                               <div className="flex-1 min-w-0 flex flex-col justify-center">
                                 <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full">
