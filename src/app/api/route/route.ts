@@ -1794,7 +1794,7 @@ function applyFinalRelevanceSort(places: PlaceOptionResult[], moodText: string |
   return sorted;
 }
 
-const CONTENT_KEYWORD_STOP_WORDS = ["best", "top", "popular", "famous", "good", "great", "nice", "cheap", "budget", "fancy", "the", "in", "for", "and", "with", "a", "my", "me", "near", "nearby", "barcelona", "bcn", "underrated", "authentic", "local", "trendy", "affordable", "upscale", "hidden", "gem"];
+const CONTENT_KEYWORD_STOP_WORDS = ["best", "top", "popular", "famous", "good", "great", "nice", "cheap", "budget", "fancy", "the", "in", "for", "and", "with", "a", "my", "me", "near", "nearby", "barcelona", "bcn", "underrated", "authentic", "local", "trendy", "affordable", "upscale", "hidden", "gem", "find", "show", "take", "get", "give", "want", "need", "some", "somewhere", "something", "place", "spot", "walk", "looking"];
 
 /** Escape string for use in RegExp (literal match). */
 function escapeRegex(s: string): string {
@@ -2748,12 +2748,13 @@ async function searchPlace(
   nearLat: number,
   nearLng: number,
   maxResults: number = 3,
-  radiusMeters: number = 3000
+  radiusMeters: number = 3000,
+  includedType?: string
 ): Promise<PlaceOptionResult[]> {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_PLACES_API_KEY not set");
   const radiusBarcelona = Math.min(radiusMeters, 4000);
-  const placesCacheKey = `places:${(query ?? "").toLowerCase().trim()}:${Math.round(nearLat * 100)}:${Math.round(nearLng * 100)}:${radiusBarcelona}`;
+  const placesCacheKey = `places:${(query ?? "").toLowerCase().trim()}:${Math.round(nearLat * 100)}:${Math.round(nearLng * 100)}:${radiusBarcelona}${includedType ? `:${includedType}` : ""}`;
   let data: {
     places?: Array<{
       id?: string;
@@ -2794,6 +2795,7 @@ async function searchPlace(
           },
         },
         maxResultCount: Math.min(8, Math.max(1, maxResults)),
+        ...(includedType ? { includedType } : {}),
       }),
     });
   } catch (e) {
@@ -2821,13 +2823,20 @@ async function searchPlace(
       "shopping_mall", "convenience_store", "supermarket", "department_store", "furniture_store",
       "jewelry_store", "shoe_store", "florist", "hardware_store",
     ];
+    const beforeCount = places.length;
     places = places.filter((place) => {
       const type = (place.primaryType ?? "").toLowerCase();
+      const name = (place.displayName?.text ?? "").toLowerCase();
+      const editorial = (place.editorialSummary?.text ?? "").toLowerCase();
       const isExcluded = excludeTypes.some((t) => type.includes(t));
-      const isCafe = cafeTypes.some((t) => type.includes(t));
-      return isCafe || !isExcluded;
+      if (isExcluded) return false;
+      const isCafeType = cafeTypes.some((t) => type.includes(t));
+      const hasCafeSignal = /caf[eé]|coffee|espresso|roaster|brew|latte|cappuccino/i.test(name + " " + editorial);
+      return isCafeType || hasCafeSignal;
     });
-    console.log("[places] after cafe filter:", places.length, "results");
+    if (beforeCount > places.length) {
+      console.log(`[places] Cafe filter removed ${beforeCount - places.length} non-cafe venues`);
+    }
   }
   const out: PlaceOptionResult[] = [];
   const needLlmDescription: { name: string; primaryType?: string; index: number }[] = [];
@@ -3594,6 +3603,32 @@ const AREA_BBOXES: Record<string, { minLat: number; maxLat: number; minLng: numb
   collserola: { minLat: 41.41, maxLat: 41.44, minLng: 2.08, maxLng: 2.16 },
   "poble nou": { minLat: 41.39, maxLat: 41.405, minLng: 2.192, maxLng: 2.21 },
   poblenou: { minLat: 41.39, maxLat: 41.405, minLng: 2.192, maxLng: 2.21 },
+  "el born": { minLat: 41.383, maxLat: 41.389, minLng: 2.179, maxLng: 2.186 },
+  born: { minLat: 41.383, maxLat: 41.389, minLng: 2.179, maxLng: 2.186 },
+  "sant antoni": { minLat: 41.379, maxLat: 41.387, minLng: 2.155, maxLng: 2.167 },
+  sants: { minLat: 41.373, maxLat: 41.383, minLng: 2.125, maxLng: 2.145 },
+  "les corts": { minLat: 41.380, maxLat: 41.395, minLng: 2.115, maxLng: 2.135 },
+  "sarrià": { minLat: 41.395, maxLat: 41.41, minLng: 2.11, maxLng: 2.135 },
+  sarria: { minLat: 41.395, maxLat: 41.41, minLng: 2.11, maxLng: 2.135 },
+  "sant gervasi": { minLat: 41.395, maxLat: 41.415, minLng: 2.13, maxLng: 2.155 },
+  "poble sec": { minLat: 41.370, maxLat: 41.378, minLng: 2.155, maxLng: 2.175 },
+  "el clot": { minLat: 41.405, maxLat: 41.415, minLng: 2.182, maxLng: 2.195 },
+  clot: { minLat: 41.405, maxLat: 41.415, minLng: 2.182, maxLng: 2.195 },
+  "camp de l'arpa": { minLat: 41.405, maxLat: 41.415, minLng: 2.172, maxLng: 2.185 },
+  horta: { minLat: 41.42, maxLat: 41.435, minLng: 2.155, maxLng: 2.175 },
+  "el carmel": { minLat: 41.415, maxLat: 41.425, minLng: 2.15, maxLng: 2.165 },
+  carmel: { minLat: 41.415, maxLat: 41.425, minLng: 2.15, maxLng: 2.165 },
+  "la sagrera": { minLat: 41.41, maxLat: 41.42, minLng: 2.185, maxLng: 2.2 },
+  "fort pienc": { minLat: 41.39, maxLat: 41.398, minLng: 2.175, maxLng: 2.188 },
+  "la vila de gràcia": { minLat: 41.401, maxLat: 41.41, minLng: 2.152, maxLng: 2.164 },
+  "el raval": { minLat: 41.378, maxLat: 41.388, minLng: 2.165, maxLng: 2.178 },
+  "sant pere": { minLat: 41.385, maxLat: 41.39, minLng: 2.174, maxLng: 2.182 },
+  "la ribera": { minLat: 41.383, maxLat: 41.389, minLng: 2.179, maxLng: 2.186 },
+  ribera: { minLat: 41.383, maxLat: 41.389, minLng: 2.179, maxLng: 2.186 },
+  "vila olímpica": { minLat: 41.387, maxLat: 41.395, minLng: 2.192, maxLng: 2.205 },
+  "vila olimpica": { minLat: 41.387, maxLat: 41.395, minLng: 2.192, maxLng: 2.205 },
+  "diagonal mar": { minLat: 41.405, maxLat: 41.415, minLng: 2.21, maxLng: 2.225 },
+  pedralbes: { minLat: 41.385, maxLat: 41.4, minLng: 2.1, maxLng: 2.12 },
 };
 
 function isInBarcelona(lat: number, lng: number): boolean {
@@ -3672,6 +3707,21 @@ const ROUTE_NEIGHBORHOOD_BBOXES: { name: string; minLat: number; maxLat: number;
   { name: "Poble Sec", minLat: 41.37, maxLat: 41.378, minLng: 2.155, maxLng: 2.172 },
   { name: "Poblenou", minLat: 41.39, maxLat: 41.405, minLng: 2.192, maxLng: 2.21 },
   { name: "Gràcia", minLat: 41.4, maxLat: 41.41, minLng: 2.148, maxLng: 2.17 },
+  { name: "Sant Antoni", minLat: 41.379, maxLat: 41.387, minLng: 2.155, maxLng: 2.167 },
+  { name: "Poble Sec", minLat: 41.370, maxLat: 41.378, minLng: 2.155, maxLng: 2.175 },
+  { name: "Fort Pienc", minLat: 41.39, maxLat: 41.398, minLng: 2.175, maxLng: 2.188 },
+  { name: "Vila Olímpica", minLat: 41.387, maxLat: 41.395, minLng: 2.192, maxLng: 2.205 },
+  { name: "El Clot", minLat: 41.405, maxLat: 41.415, minLng: 2.182, maxLng: 2.195 },
+  { name: "Camp de l'Arpa", minLat: 41.405, maxLat: 41.415, minLng: 2.172, maxLng: 2.185 },
+  { name: "Horta", minLat: 41.42, maxLat: 41.435, minLng: 2.155, maxLng: 2.175 },
+  { name: "El Carmel", minLat: 41.415, maxLat: 41.425, minLng: 2.15, maxLng: 2.165 },
+  { name: "La Sagrera", minLat: 41.41, maxLat: 41.42, minLng: 2.185, maxLng: 2.2 },
+  { name: "Sants", minLat: 41.373, maxLat: 41.383, minLng: 2.125, maxLng: 2.145 },
+  { name: "Les Corts", minLat: 41.380, maxLat: 41.395, minLng: 2.115, maxLng: 2.135 },
+  { name: "Sarrià", minLat: 41.395, maxLat: 41.41, minLng: 2.11, maxLng: 2.135 },
+  { name: "Sant Gervasi", minLat: 41.395, maxLat: 41.415, minLng: 2.13, maxLng: 2.155 },
+  { name: "Pedralbes", minLat: 41.385, maxLat: 41.4, minLng: 2.1, maxLng: 2.12 },
+  { name: "Diagonal Mar", minLat: 41.405, maxLat: 41.415, minLng: 2.21, maxLng: 2.225 },
   { name: "Eixample", minLat: 41.385, maxLat: 41.4, minLng: 2.148, maxLng: 2.18 },
   { name: "Montjuïc", minLat: 41.358, maxLat: 41.375, minLng: 2.148, maxLng: 2.17 },
 ];
@@ -4278,11 +4328,13 @@ export async function POST(req: NextRequest) {
               } else if (detectedQualifier != null && qualifierBaseType != null) {
                 // First search: include qualifier so Google can return e.g. pet-friendly places
                 const fullQuery = `${detectedQualifier} ${qualifierBaseType} Barcelona`;
-                places = await searchPlace(fullQuery, searchLat, searchLng, maxSearchResults, poiSearchRadius);
+                const qualifierType = /cafe|coffee/i.test(qualifierBaseType ?? "") ? "cafe" : undefined;
+                places = await searchPlace(fullQuery, searchLat, searchLng, maxSearchResults, poiSearchRadius, qualifierType);
                 console.log("[DEBUG-MERGE] Qualifier full search:", places.map((p) => p.name));
                 if (places.length < 3) {
                   const fallbackQuery = `${qualifierBaseType} Barcelona`;
-                  const morePlaces = await searchPlace(fallbackQuery, searchLat, searchLng, maxSearchResults, poiSearchRadius);
+                  const fallbackType = /cafe|coffee/i.test(qualifierBaseType ?? "") ? "cafe" : undefined;
+                  const morePlaces = await searchPlace(fallbackQuery, searchLat, searchLng, maxSearchResults, poiSearchRadius, fallbackType);
                   console.log("[DEBUG-MERGE] Qualifier fallback search:", morePlaces.map((p) => p.name));
                   const existingIds = new Set(places.map((p) => p.place_id ?? p.name));
                   const beforeMerge = places.length;
@@ -4293,7 +4345,10 @@ export async function POST(req: NextRequest) {
                 }
               } else {
                 // First search (specific query, e.g. "matcha cafe Barcelona")
-                let allPlaces = await searchPlace(poiSearchQuery, searchLat, searchLng, maxSearchResults, poiSearchRadius);
+                // For cafe/coffee queries, constrain Google Places to return only cafes (avoids gift shops, souvenir stores, etc.)
+                const cafeTypeQuery = /\bcafe\b|cafes|coffee\s*shop|coffeehouse|coffee\b/i.test(poiSearchQuery);
+                const searchType = cafeTypeQuery ? "cafe" : undefined;
+                let allPlaces = await searchPlace(poiSearchQuery, searchLat, searchLng, maxSearchResults, poiSearchRadius, searchType);
                 console.log("[DEBUG-MERGE] Specific search:", allPlaces.map((p) => p.name));
 
                 // Content keywords from mood (e.g. "matcha" from "best matcha in bcn") — for variation queries
@@ -4316,7 +4371,7 @@ export async function POST(req: NextRequest) {
                     ];
                     const existingIds = new Set(allPlaces.map((p) => p.place_id ?? p.name));
                     for (const query of variations) {
-                      const moreResults = await searchPlace(query, searchLat, searchLng, 5, 15000);
+                      const moreResults = await searchPlace(query, searchLat, searchLng, 5, 15000, searchType);
                       for (const p of moreResults) {
                         const id = p.place_id ?? p.name;
                         if (!existingIds.has(id)) {
@@ -4622,8 +4677,19 @@ export async function POST(req: NextRequest) {
         ) * 111000; // rough meters per degree
       let routeOrigin: [number, number] = [...originCoords];
       if (distToArea > 2000) {
-        routeOrigin = [areaCenterLat, areaCenterLng];
-        console.log("[route] Area far from user, starting walk from area center");
+        // Start from a varied point within the area bbox (not always dead center)
+        const bbox = parsedArea ? getAreaBbox(parsedArea) : null;
+        if (bbox) {
+          const latRange = bbox.maxLat - bbox.minLat;
+          const lngRange = bbox.maxLng - bbox.minLng;
+          // Random offset within 30% of bbox size from center
+          const latOffset = (Math.random() - 0.5) * latRange * 0.3;
+          const lngOffset = (Math.random() - 0.5) * lngRange * 0.3;
+          routeOrigin = [areaCenterLat + latOffset, areaCenterLng + lngOffset];
+        } else {
+          routeOrigin = [areaCenterLat, areaCenterLng];
+        }
+        console.log("[route] Area far from user, starting walk from area point:", routeOrigin);
       }
 
       // Special handling for waterfront/beach — use promenade waypoints
@@ -4828,7 +4894,9 @@ export async function POST(req: NextRequest) {
         };
         searchQuery = `${areaPoiQueries[intent] || "landmark plaza"} ${parsedArea || ""} Barcelona`.trim();
       }
-      let areaPois = await searchPlace(searchQuery, areaCenter[0], areaCenter[1], 5, 1500);
+      const areaSearchRadius = walkDuration <= 30 ? 1500 : walkDuration <= 60 ? 2500 : 3000;
+      const areaSearchCount = walkDuration <= 30 ? 5 : 8;
+      let areaPois = await searchPlace(searchQuery, areaCenter[0], areaCenter[1], areaSearchCount, areaSearchRadius);
       const areaBbox = parsedArea ? getAreaBbox(parsedArea) : null;
       if (areaBbox) {
         areaPois = areaPois.filter((p) => p.lat >= areaBbox.minLat && p.lat <= areaBbox.maxLat && p.lng >= areaBbox.minLng && p.lng <= areaBbox.maxLng);
@@ -4836,7 +4904,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (areaPois.length >= 2) {
-        const maxAreaPois = walkDuration <= 15 ? 2 : walkDuration <= 30 ? 3 : 4;
+        const maxAreaPois = walkDuration <= 15 ? 2 : walkDuration <= 30 ? 3 : walkDuration <= 45 ? 4 : walkDuration <= 60 ? 5 : 6;
         // Nearest-neighbor order from routeOrigin so we have a sensible start → end trail
         const ordered: typeof areaPois = [];
         let remaining = areaPois.slice();
@@ -4870,7 +4938,9 @@ export async function POST(req: NextRequest) {
             forceAvoidZones
           );
 
-          if (explorationRoute.duration <= 5400) {
+          // Minimum 20min for discovery walks; accept all others. Duration is in seconds.
+          const minDurationSec = intent === "discover" ? 1200 : 0;
+          if (explorationRoute.duration >= minDurationSec && explorationRoute.duration <= 5400) {
             const { index } = await loadStreetData();
             const { score, breakdown, tags } = scoreRoute(explorationRoute.coordinates, intent, index);
             const poiPoints = loadPoiData();
@@ -4915,40 +4985,30 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            // For discovery walks in a specific area, describe what's worth discovering in the neighbourhood
+            // Sub-description: list the POIs that informed this route, so the user knows what they'll walk past
             let summary: string;
-            if (intent === "discover" && parsedArea) {
-              const discoveryDescriptors: Record<string, string> = {
-                "poble nou": "industrial heritage · street art · design studios",
-                "poblenou": "industrial heritage · street art · design studios",
-                "el born": "medieval lanes · artisan workshops · hidden plazas",
-                "born": "medieval lanes · artisan workshops · hidden plazas",
-                "gràcia": "village squares · independent shops · local bars",
-                "gracia": "village squares · independent shops · local bars",
-                "raval": "multicultural streets · gallery spaces · historic courtyards",
-                "el raval": "multicultural streets · gallery spaces · historic courtyards",
-                "gothic": "roman ruins · narrow alleys · cathedral quarter",
-                "barri gòtic": "roman ruins · narrow alleys · cathedral quarter",
-                "barri gotic": "roman ruins · narrow alleys · cathedral quarter",
-                "eixample": "modernist facades · wide boulevards · hidden courtyards",
-                "barceloneta": "fisherman's quarter · beach promenade · local taverns",
-                "sant antoni": "market culture · vintage shops · terrace cafés",
-                "sants": "local neighbourhood life · Parc de l'Espanya Industrial",
-                "sarrià": "village charm · quiet gardens · hilltop paths",
-                "sarria": "village charm · quiet gardens · hilltop paths",
-              };
-              const areaKey = parsedArea.toLowerCase().trim();
-              const areaDesc = discoveryDescriptors[areaKey];
-              if (areaDesc) {
-                summary = areaDesc;
-              } else {
-                summary = buildSummary(explorationRoute.duration, explorationRoute.distance, tags, intent, isNight);
-              }
+            if (ordered.length >= 2) {
+              const poiNames = ordered.slice(0, 4).map((p) => p.name);
+              summary = "Via " + poiNames.join(" → ");
             } else {
               summary = buildSummary(explorationRoute.duration, explorationRoute.distance, tags, intent, isNight);
             }
             if (isEmotionalSupport && summary) summary = softenSummaryForEmotionalSupport(summary);
 
+            // Extract POIs for map pins (same pattern as normal route response)
+            const areaPois = highlights.length > 0
+              ? highlights
+                  .filter((h) => h.type !== "destination" && (h.name ?? h.label ?? "").trim() !== "")
+                  .slice(0, 5)
+                  .map((h) => ({
+                    name: (h.name ?? h.label ?? "").trim(),
+                    lat: h.lat,
+                    lng: h.lng,
+                    type: h.type,
+                    photo_url: (h as { photo_url?: string | null }).photo_url ?? null,
+                    description: (h as { description?: string | null }).description ?? null,
+                  }))
+              : undefined;
             const result = {
               coordinates: explorationRoute.coordinates,
               duration: explorationRoute.duration,
@@ -4957,11 +5017,17 @@ export async function POST(req: NextRequest) {
               breakdown,
               summary,
               highlights,
+              ...(areaPois && areaPois.length > 0 && { pois: areaPois }),
             };
 
             const lastPoi = ordered[ordered.length - 1];
-            const trailDestinationName =
+            let trailDestinationName =
               ordered.length > 1 ? `${ordered[0].name} → ${lastPoi.name}` : ordered[0].name;
+            // For discovery walks in a named area, use "discovery walk of [area]" as headline
+            if (intent === "discover" && parsedArea) {
+              const areaDisplay = parsedArea.charAt(0).toUpperCase() + parsedArea.slice(1);
+              trailDestinationName = `Discovery walk of ${areaDisplay}`;
+            }
             return NextResponse.json({
               recommended: result,
               quick: result,
