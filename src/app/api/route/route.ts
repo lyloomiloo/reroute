@@ -3838,7 +3838,7 @@ export async function POST(req: NextRequest) {
         // ── Post-parse overrides ──────────────────────────────────
 
         // OVERRIDE A: Place-type keywords → force mood_and_poi
-        if (pattern === "mood_only" && moodText) {
+        if ((pattern === "mood_only" || (pattern !== "mood_and_poi" && !destCoords)) && moodText) {
           const text = String(moodText).toLowerCase();
           const placeTypeKeywords = [
             "cafe", "cafes", "café", "cafés", "coffee", "coffee shop",
@@ -4605,7 +4605,7 @@ export async function POST(req: NextRequest) {
       effectiveDuration = intent === "quick" ? 15 : DEFAULT_MOOD_ONLY_DURATION;
     }
     if (pattern === "mood_and_area" && effectiveDuration == null) {
-      effectiveDuration = 45;
+      effectiveDuration = intent === "discover" ? 60 : 45;
     }
 
     // AREA EXPLORATION ROUTES (after duration is confirmed)
@@ -4915,7 +4915,38 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            let summary = buildSummary(explorationRoute.duration, explorationRoute.distance, tags, intent, isNight);
+            // For discovery walks in a specific area, describe what's worth discovering in the neighbourhood
+            let summary: string;
+            if (intent === "discover" && parsedArea) {
+              const discoveryDescriptors: Record<string, string> = {
+                "poble nou": "industrial heritage · street art · design studios",
+                "poblenou": "industrial heritage · street art · design studios",
+                "el born": "medieval lanes · artisan workshops · hidden plazas",
+                "born": "medieval lanes · artisan workshops · hidden plazas",
+                "gràcia": "village squares · independent shops · local bars",
+                "gracia": "village squares · independent shops · local bars",
+                "raval": "multicultural streets · gallery spaces · historic courtyards",
+                "el raval": "multicultural streets · gallery spaces · historic courtyards",
+                "gothic": "roman ruins · narrow alleys · cathedral quarter",
+                "barri gòtic": "roman ruins · narrow alleys · cathedral quarter",
+                "barri gotic": "roman ruins · narrow alleys · cathedral quarter",
+                "eixample": "modernist facades · wide boulevards · hidden courtyards",
+                "barceloneta": "fisherman's quarter · beach promenade · local taverns",
+                "sant antoni": "market culture · vintage shops · terrace cafés",
+                "sants": "local neighbourhood life · Parc de l'Espanya Industrial",
+                "sarrià": "village charm · quiet gardens · hilltop paths",
+                "sarria": "village charm · quiet gardens · hilltop paths",
+              };
+              const areaKey = parsedArea.toLowerCase().trim();
+              const areaDesc = discoveryDescriptors[areaKey];
+              if (areaDesc) {
+                summary = areaDesc;
+              } else {
+                summary = buildSummary(explorationRoute.duration, explorationRoute.distance, tags, intent, isNight);
+              }
+            } else {
+              summary = buildSummary(explorationRoute.duration, explorationRoute.distance, tags, intent, isNight);
+            }
             if (isEmotionalSupport && summary) summary = softenSummaryForEmotionalSupport(summary);
 
             const result = {
