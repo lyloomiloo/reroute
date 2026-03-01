@@ -2480,7 +2480,7 @@ Reply with ONLY a valid JSON array, nothing else.`,
         _fitScore: match?.fit_score ?? 5,
         description:
           match?.reason && match.fit_score >= 6
-            ? trimTrailingPunctuation(truncateToWords(match.reason, 8))
+            ? trimTrailingPunctuation(truncateToWords(match.reason, 12))
             : place.description,
       };
     });
@@ -2595,11 +2595,11 @@ async function searchPlace(
     const primaryType = place.primaryType;
     let description: string | null = null;
     if (editorialText && !/experience|discover|explore|authentic|hidden gem/i.test(editorialText)) {
-      description = truncateToWords(editorialText, 8);
+      description = truncateToWords(editorialText, 12);
     }
     if (!description && reviewText) {
       const firstSentence = reviewText.split(/[.!?]/)[0]?.trim() ?? reviewText;
-      description = truncateToWords(firstSentence, 8);
+      description = truncateToWords(firstSentence, 12);
     }
     if (!description) {
       description = placeTypeToLabel(primaryType);
@@ -2643,7 +2643,7 @@ async function searchPlace(
         const d = needLlmDescription[i];
         const text = llmDescriptions[i];
         if (text && out[d.index]) {
-          out[d.index].description = trimTrailingPunctuation(truncateToWords(text, 8));
+          out[d.index].description = trimTrailingPunctuation(truncateToWords(text, 12));
         }
       }
     } catch {
@@ -2936,8 +2936,8 @@ async function generatePlaceDescriptions(
   if (!apiKey) return places.map(() => "");
   const list = places.map((p, i) => `${i + 1}. ${p.name}${p.primaryType ? ` (${p.primaryType})` : ""}`).join("\n");
   const contextInstruction = searchQuery?.trim()
-    ? `The user searched for: "${searchQuery.trim()}". For each place, write a 6-8 word description. One short sentence only. You may infer likely features ONLY from the place NAME and TYPE. NEVER invent specific amenities unless the name strongly implies them.`
-    : `Write a 6-8 word description of this place. Must be one short sentence. Base it ONLY on the place name and type. Never invent amenities or features.`;
+    ? `The user searched for: "${searchQuery.trim()}". For each place, write a description that is exactly 8-12 words long, relevant to what they're looking for. You may infer likely features ONLY from the place NAME and TYPE. NEVER invent specific amenities unless the name strongly implies them. If the natural description is too short, add a relevant detail (neighborhood, specialty, atmosphere).`
+    : `Generate a description that is exactly 8-12 words long. Always fill 2 full lines of text at mobile width. If the natural description is too short, add a relevant detail (neighborhood, specialty, atmosphere). Base descriptions ONLY on the place name and type. Never invent amenities or features.`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -2953,12 +2953,12 @@ async function generatePlaceDescriptions(
           role: "system",
           content: `${contextInstruction}
 
-Examples (6-8 words each):
-- "Greek-inspired café with quality pastries"
-- "Cozy modern café with great wifi"
-- "Specialty coffee in a warm space"
+Examples:
+- "Matcha-focused coffee shop with a minimalist Japanese-inspired vibe"
+- "Cozy tea house specializing in ceremonial-grade matcha and desserts"
+- "Specialty coffee and matcha bar in the heart of Eixample"
 
-Never use: experience, discover, explore, authentic, hidden gem. Never invent amenities unless the place name explicitly implies them.
+Never use: experience, discover, explore, authentic, hidden gem. Never invent: wifi, power sockets, outdoor seating, terrace, cozy atmosphere, spacious, artistic decor — unless the place name explicitly contains these words.
 
 Reply with one line per place, in the same order, numbered 1., 2., etc. Nothing else.`,
         },
