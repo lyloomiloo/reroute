@@ -1332,19 +1332,22 @@ function PageContent() {
                           )}
 
                           <div className="flex-1 flex flex-col min-h-0 p-3">
-                            <h3 className="font-mono font-bold text-sm line-clamp-1 mb-0.5 w-full">
-                              {place.name}
+                            {/* 1. Place name — always first, bold */}
+                            <h3 className="font-mono font-bold text-sm line-clamp-1 min-h-[1.25em] mb-0.5 w-full text-gray-900">
+                              {place.name ?? "Place"}
                             </h3>
-                            {place.qualifierVerified && (place.qualifierReason || placeOptionsQualifierSearched) && (
-                              <span className="font-mono text-[10px] text-green-600 uppercase">
+                            {/* 2. Feature qualifier tag (below name) */}
+                            {place.qualifierVerified && (place.qualifierReason ?? placeOptionsQualifierSearched) != null && (
+                              <span className="font-mono text-[10px] text-green-600 uppercase block">
                                 ✓ {place.qualifierReason ?? `${placeOptionsQualifierSearched} mentioned in ${place.qualifierSource === "web" ? "web results" : "reviews"}`}
                               </span>
                             )}
-                            {!place.qualifierVerified && placeOptionsQualifierSearched && (
-                              <span className="font-mono text-[10px] text-gray-400 uppercase">
+                            {!place.qualifierVerified && placeOptionsQualifierSearched != null && (
+                              <span className="font-mono text-[10px] text-gray-400 uppercase block">
                                 {place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`}
                               </span>
                             )}
+                            {/* 3. Description (2 lines) */}
                             <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full mt-0.5">
                               {place.description != null ? place.description.replace(/\.$/, "") : null}
                             </p>
