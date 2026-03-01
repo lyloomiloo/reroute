@@ -6,6 +6,7 @@ import PhoneFrame from "@/components/PhoneFrame";
 import MapView from "@/components/MapView";
 import {
   getRoute,
+  getRouteParseOnly,
   getRouteWithDuration,
   getRouteWithDestination,
   type RoutesResponse,
@@ -247,15 +248,7 @@ function PageContent() {
   const handleMoodSubmit = async (overrideMoodText?: string) => {
     const text = (overrideMoodText ?? moodInput).trim();
     setInputFocused(false);
-    // Set loading messages by inferred request type (API returns pattern only after response)
-    const looksLikeDestination =
-      (/\b(walk|get me|route)\s+to\b/i.test(text) || /^to\s+\w/i.test(text)) &&
-      !/\b(best|matcha|cafe|cafés|coffee|restaurant|bar|laptop|wifi|pet-friendly|outdoor)\b/i.test(text);
-    const looksLikePlaceSearch =
-      /\b(cafe|cafés|coffee|restaurant|bar|matcha|best\s+\w+|laptop|wifi|pet-friendly|outdoor|terrace|bookshop|museum)\b/i.test(text);
-    if (looksLikeDestination) setLoadingType("route");
-    else if (looksLikePlaceSearch) setLoadingType("search");
-    else setLoadingType("walk");
+    setLoadingType("walk");
     setIsLoading(true);
     setRouteError(null);
     setDurationPrompt(null);
@@ -273,6 +266,15 @@ function PageContent() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ROUTE_TIMEOUT_MS);
     try {
+      // Get actual action type from API so loading messages match what's happening
+      try {
+        const parseRes = await getRouteParseOnly(origin, text, { signal: controller.signal, forceNightMode: nightModeOverride });
+        const loadingTypeFromAction: "route" | "search" | "walk" =
+          parseRes.actionType === "place_search" ? "search" : parseRes.actionType === "route" ? "route" : "walk";
+        setLoadingType(loadingTypeFromAction);
+      } catch {
+        // keep default "walk" if parse-only fails
+      }
       const result = await getRoute(origin, text, { signal: controller.signal, forceNightMode: nightModeOverride });
       console.log("[frontend] API response keys:", Object.keys(result));
       if (isEdgeCaseResponse(result)) {
@@ -1347,6 +1349,10 @@ function PageContent() {
                           )}
 
                           <div className="flex-1 flex flex-col min-h-0 p-3">
+                            <h3 className="font-mono font-bold text-sm line-clamp-1 w-full text-gray-900">
+                              {place.name ?? "Place"}
+                            </h3>
+                            {/* Single slot: feature tag (green) OR description (grey), never both */}
                             {(() => {
                               const verifiedTag =
                                 place.qualifierVerified && (place.qualifierReason ?? placeOptionsQualifierSearched) != null
@@ -1357,42 +1363,32 @@ function PageContent() {
                                   ? (place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`)
                                   : null;
                               const featureTagLine = (verifiedTag ?? unverifiedTag)?.trim() ?? "";
-                              const hasFeatureTag = featureTagLine.length > 0;
-                              return (
-                                <>
-                                  <div className={hasFeatureTag ? "space-y-1" : ""}>
-                                    <h3 className="font-mono font-bold text-sm line-clamp-1 w-full text-gray-900">
-                                      {place.name ?? "Place"}
-                                    </h3>
-                                    {hasFeatureTag && (
-                                      <span className={`font-mono text-[10px] uppercase block ${verifiedTag != null ? "text-green-600" : "text-gray-400"}`}>
-                                        {featureTagLine}
-                                      </span>
-                                    )}
-                                  </div>
-                                  {/* Description + rating (left) | GO button (right) */}
-                                  <div className={`mt-auto flex flex-row items-center gap-2 min-h-0 ${hasFeatureTag ? "pt-1" : "pt-0"}`}>
-                                    <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                      <p className={`font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full ${hasFeatureTag ? "mt-1" : "mt-0"}`}>
-                                        {place.description != null ? place.description.replace(/\.$/, "") : null}
-                                      </p>
-                                      <p className="font-mono text-[10px] text-gray-400 mt-0.5">
-                                        {place.rating != null && (
-                                          <span>{place.rating.toFixed(1)} ★</span>
-                                        )}
-                                      </p>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRouteToPlace(place)}
-                                      className="flex-shrink-0 self-center bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded hover:opacity-90 min-w-[3rem]"
-                                    >
-                                      GO
-                                    </button>
-                                  </div>
-                                </>
+                              const useFeatureTag = featureTagLine.length > 0;
+                              const isVerifiedTag = verifiedTag != null && verifiedTag.length > 0;
+                              return useFeatureTag ? (
+                                <p className={`font-mono text-[10px] uppercase line-clamp-2 min-h-[2.5em] text-left w-full mt-0.5 ${isVerifiedTag ? "text-green-600" : "text-gray-500"}`}>
+                                  {featureTagLine}
+                                </p>
+                              ) : (
+                                <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full mt-0.5">
+                                  {place.description != null ? place.description.replace(/\.$/, "") : null}
+                                </p>
                               );
                             })()}
+                            <div className="mt-auto pt-1 flex flex-row items-center gap-2 min-h-0">
+                              <p className="font-mono text-[10px] text-gray-400 flex-1 min-w-0">
+                                {place.rating != null && (
+                                  <span>{place.rating.toFixed(1)} ★</span>
+                                )}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => handleRouteToPlace(place)}
+                                className="flex-shrink-0 bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded hover:opacity-90 min-w-[3rem]"
+                              >
+                                GO
+                              </button>
+                            </div>
                           </div>
                         </div>
                         </Fragment>

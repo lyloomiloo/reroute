@@ -3468,6 +3468,7 @@ export async function POST(req: NextRequest) {
       exclude_place_ids: bodyExcludePlaceIds,
       forceNightMode: bodyForceNightMode,
       retry_count: retryCount,
+      parseOnly: bodyParseOnly,
     } = body;
 
     if (!origin || !Array.isArray(origin) || origin.length < 2) {
@@ -3530,6 +3531,7 @@ export async function POST(req: NextRequest) {
       destination_address = typeof bodyDestinationAddress === "string" ? bodyDestinationAddress : null;
       console.log("[route] destination received (lat, lng):", destCoords, "name:", destination_name || "(none)", "place_type:", destination_place_type || "(none)");
       intent = hasIntentOverride ? (bodyIntent as Intent) : "calm";
+      if (bodyParseOnly === true) return NextResponse.json({ actionType: "route" as const, pattern });
     } else if (moodText == null || String(moodText).trim() === "") {
       return NextResponse.json({ error: "moodText required when not passing destination+intent" }, { status: 400 });
     }
@@ -3616,6 +3618,20 @@ export async function POST(req: NextRequest) {
         }
 
         console.log(`[route] Parsed: pattern=${pattern}, intent=${intent}, poi_focus=${poi_focus}, skip_duration=${skipDuration}, is_loop=${isLoop}, poi_search_terms=${JSON.stringify(poi_search_terms)}, suggested_duration=${suggestedDuration}, target_km=${targetDistanceKm}, max_mins=${maxDurationMinutes}`);
+
+        // Optional: return only action type for client loading messages (parseOnly: true)
+        const parseOnly = bodyParseOnly === true;
+        if (parseOnly) {
+          const actionType: "place_search" | "route" | "loop_route" =
+            pattern === "mood_and_poi"
+              ? "place_search"
+              : pattern === "mood_only" && isLoop
+                ? "loop_route"
+                : pattern === "themed_walk"
+                  ? "loop_route"
+                  : "route";
+          return NextResponse.json({ actionType, pattern });
+        }
 
         switch (pattern) {
           case "mood_and_destination":

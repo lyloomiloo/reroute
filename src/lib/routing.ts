@@ -162,6 +162,35 @@ export function isEdgeCaseResponse(
 
 const ROUTE_NOT_FOUND_MSG = "Couldn't find a walkable route — try a closer destination.";
 
+export type ActionType = "place_search" | "route" | "loop_route";
+
+export async function getRouteParseOnly(
+  origin: [number, number],
+  moodText: string,
+  options?: { signal?: AbortSignal; forceNightMode?: boolean }
+): Promise<{ actionType: ActionType; pattern?: string }> {
+  const body: Record<string, unknown> = {
+    origin,
+    moodText: moodText.trim(),
+    parseOnly: true,
+  };
+  if (options?.forceNightMode === true) body.forceNightMode = true;
+  const res = await fetch("/api/route", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: options?.signal,
+  });
+  if (!res.ok) {
+    return { actionType: "route" };
+  }
+  const data = (await res.json()) as { actionType?: ActionType; pattern?: string };
+  return {
+    actionType: data.actionType === "place_search" || data.actionType === "loop_route" ? data.actionType : "route",
+    pattern: data.pattern,
+  };
+}
+
 export async function getRoute(
   origin: [number, number],
   moodText: string,
