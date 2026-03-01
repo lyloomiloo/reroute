@@ -5674,7 +5674,7 @@ export async function POST(req: NextRequest) {
       destination_photo: destination_photo ?? undefined,
       pattern,
       intent,
-      actionType: (pattern === "mood_only" || pattern === "themed_walk" ? "loop_route" : "route") as "route" | "loop_route",
+      actionType: (pattern === "themed_walk" ? "loop_route" : "route") as "route" | "loop_route",
       night_mode: isNight,
     });
   } catch (error) {
