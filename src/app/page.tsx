@@ -362,6 +362,9 @@ function PageContent() {
     const excludeIds = placeOptions?.map((p) => (p as { place_id?: string | null }).place_id ?? p.name).filter(Boolean) ?? [];
     console.log("[frontend] Refresh / Load more clicked, re-sending:", moodText, "offset:", placeOptions?.length ?? 0, "exclude_place_ids:", excludeIds.length);
     setLoadingMorePlaces(true);
+    setLoadingDots(1);
+    setLoadingPhase(0);
+    setIsLoading(true);
     try {
       const res = await fetch("/api/route", {
         method: "POST",
@@ -386,6 +389,7 @@ function PageContent() {
       console.error("Load more places error:", e);
     } finally {
       setLoadingMorePlaces(false);
+      setIsLoading(false);
     }
   };
 

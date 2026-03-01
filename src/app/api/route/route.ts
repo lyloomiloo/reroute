@@ -1729,7 +1729,7 @@ const subjectiveQualifiers: Record<string, { sortBy: string; label: string }> = 
   "local": { sortBy: "hidden_gem", label: "lesser-known spots with great ratings" },
 };
 
-/** Generate a short human-readable headline for search results (for sort_label). Returns lowercase or null. */
+/** Generate a short human-readable headline for search results (for sort_label). Explains WHY/HOW results were chosen, not what the user searched. Returns uppercase or null. */
 async function generateSearchSummary(context: {
   moodText: string;
   places: PlaceOptionResult[];
@@ -1741,18 +1741,24 @@ async function generateSearchSummary(context: {
 }): Promise<string | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
-  const { moodText, places, contentKeywords } = context;
+  const { moodText, places, contentKeywords, detectedQualifier, detectedSubjective } = context;
   const totalFound = places.length;
   const matchingContent =
     contentKeywords.length > 0
       ? places.filter((p) => contentKeywords.some((kw) => (p.name ?? "").toLowerCase().includes(kw)))
       : places;
   const matchingCount = matchingContent.length;
+  const userSaidBest = /\bbest\b/i.test(moodText);
   try {
     const userHint =
       contentKeywords.length > 0 && matchingCount > 0
-        ? `User searched: "${moodText}". Found ${totalFound} places; ${matchingCount} match the search theme (e.g. ${contentKeywords.slice(0, 2).join(", ")}). Write a short headline that reflects what we found (e.g. matcha spots, cafes).`
-        : `User searched: "${moodText}". Found ${totalFound} places. Write a short headline for these results.`;
+        ? `User searched: "${moodText}". We found ${totalFound} places; ${matchingCount} match the theme (e.g. ${contentKeywords.slice(0, 2).join(", ")}).`
+        : `User searched: "${moodText}". We found ${totalFound} places.`;
+    const sortContext: string[] = [];
+    if (detectedQualifier) sortContext.push(`Results are verified for: ${detectedQualifier}`);
+    if (detectedSubjective) sortContext.push(`Subjective sort: ${detectedSubjective}`);
+    if (matchingCount > 0 && contentKeywords.length > 0) sortContext.push("Results ranked by relevance to the search theme");
+    const contextLine = sortContext.length > 0 ? `\nContext: ${sortContext.join(". ")}` : "";
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -1765,20 +1771,44 @@ async function generateSearchSummary(context: {
         messages: [
           {
             role: "system",
-            content:
-              "You write a short headline for search results in a walking app. Write like a helpful friend, not a search engine. Never mention technical terms like 'weighted rating', 'broadened search', 'relevance score'. Just say what you found in plain language. Under 8 words. Lowercase. No emojis. If the user searched for something specific (e.g. matcha) and we found places matching that, say so (e.g. 'matcha spots across barcelona'). Never say 'no X found' if we have matching places. Examples: 'matcha spots across barcelona' / 'laptop-friendly cafes nearby' / 'top-rated pet-friendly restaurants' / 'quiet bookshops in the gothic quarter' / 'best bakeries by rating'",
+            content: `You generate a short headline (4-8 words, UPPERCASE) that explains WHY these places were chosen or HOW they're ranked. Do NOT repeat the user's search query or category. Describe the quality signal or sorting criteria instead.
+
+Rules:
+- Do NOT include the city name (Barcelona, BCN, etc.) — the user already knows where they are.
+- Do NOT use the word "best" if the user's query already contained "best".
+- Tell the user something NEW: the quality signal, not the category.
+
+Examples by situation:
+- Sorted by rating: TOP RATED BY LOCALS
+- Hidden gems (high rating, fewer reviews): HIDDEN GEMS WORTH DISCOVERING
+- Relevance to a specific product (e.g. matcha): HIGHLY RATED FOR MATCHA
+- Verified by reviews: CONFIRMED IN RECENT REVIEWS
+- Sorted by price (value): BEST VALUE PICKS
+- Feature qualifier (e.g. pet-friendly): VERIFIED PET-FRIENDLY SPOTS
+- Laptop-friendly: VERIFIED LAPTOP-FRIENDLY SPOTS
+
+Reply with ONLY the headline in UPPERCASE, no quotes, no period.`,
           },
           {
             role: "user",
-            content: userHint,
+            content: `${userHint}${contextLine}\n\nGenerate one headline (4-8 words, UPPERCASE). Do not repeat the search query.${userSaidBest ? " Do not use the word BEST." : ""}`,
           },
         ],
       }),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const summary = data.choices?.[0]?.message?.content?.trim()?.toLowerCase() ?? null;
-    if (summary) console.log("[sort] Generated summary:", summary);
+    let summary = data.choices?.[0]?.message?.content?.trim() ?? null;
+    if (summary) {
+      summary = summary.toUpperCase();
+      if (userSaidBest && /\bBEST\b/.test(summary)) {
+        summary = summary.replace(/\bBEST\b/g, "TOP").trim();
+      }
+      if (/BARCELONA|BCN\b/.test(summary)) {
+        summary = summary.replace(/\s*(BARCELONA|BCN)\s*/gi, " ").replace(/\s+/g, " ").trim();
+      }
+      console.log("[sort] Generated summary:", summary);
+    }
     return summary;
   } catch (e) {
     console.log("[sort] generateSearchSummary failed:", e);
