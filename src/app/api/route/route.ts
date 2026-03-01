@@ -2004,6 +2004,33 @@ async function cachedWebSearch(query: string, placeName: string): Promise<SerpAp
 
 type VerificationMethod = "places_data" | "web_search" | "unverified";
 
+/** For laptop/work/study qualifier searches, exclude venue types that are not sit-down establishments. */
+const LAPTOP_INCOMPATIBLE_TYPES = [
+  "news_stand",
+  "kiosk",
+  "food_stand",
+  "ice_cream_shop",
+  "fast_food_restaurant",
+  "convenience_store",
+  "grocery_store",
+];
+
+function isLaptopWorkStudyQualifier(qualifier: string | null): boolean {
+  if (!qualifier) return false;
+  const q = qualifier.toLowerCase();
+  return q === "laptop-friendly" || /work|study|laptop/.test(q);
+}
+
+/** True if place should be excluded from laptop/work/study results (not a sit-down venue). */
+function isLaptopIncompatiblePlace(place: PlaceOptionResult): boolean {
+  const typeL = (place.primary_type ?? "").toLowerCase();
+  const nameL = (place.name ?? "").toLowerCase();
+  if (/stand|kiosk|quiosc/.test(nameL)) return true;
+  if (LAPTOP_INCOMPATIBLE_TYPES.some((t) => typeL.includes(t))) return true;
+  if (typeL.includes("bakery") && !nameL.includes("cafe")) return true;
+  return false;
+}
+
 /** For specific qualifier searches: only include unverified place in "also nearby" if it has some relevance (name/type/keyword). */
 function hasRelevanceSignal(place: PlaceOptionResult, qualifierSearched: string | null, moodText: string | null): boolean {
   if (!qualifierSearched) return true;
@@ -2049,6 +2076,15 @@ async function runQualifierVerification(
     };
   }
 
+  if (isLaptopWorkStudyQualifier(detectedQualifier)) {
+    const filtered = places.filter((p) => !isLaptopIncompatiblePlace(p));
+    if (filtered.length < places.length) {
+      console.log(`[verify] Filtered ${places.length - filtered.length} laptop-incompatible venues (stands, kiosks, etc.)`);
+      places.length = 0;
+      places.push(...filtered);
+    }
+  }
+
   // Tier B: LLM-based semantic verification (replaces keyword matching — catches "dog lover" → pet-friendly etc.)
   const apiKey = process.env.OPENAI_API_KEY;
   if (detectedQualifier && places.length > 0 && apiKey) {
@@ -2065,6 +2101,8 @@ async function runQualifierVerification(
       };
     });
     const prompt = `The user wants "${detectedQualifier}" places. For each place below, assess if it likely matches based on the editorial summary, review text, and place type. Consider semantic meaning — e.g. "dog lover" or "bring your dog" means pet-friendly, "spacious tables" or "wifi" suggests laptop-friendly, "terrace" or "outdoor seating" suggests outdoor-friendly.
+
+LAPTOP/WORK-FRIENDLY — PHYSICAL SUITABILITY: For laptop-friendly or work-friendly searches, even if a source lists this place, verify it is a sit-down establishment with tables and seating. News stands, kiosks, food stands, and takeaway-only spots should be marked matches: false with reason: "NOT A SIT-DOWN VENUE". A place needs tables and indoor or covered seating to qualify as laptop-friendly.
 
 NEGATIVE EVIDENCE — BE SPECIFIC: Only flag as negative (matches: false) when the qualifier keyword appears DIRECTLY next to restrictive language. Look ONLY for phrases where the qualifier is tied to the restriction. Examples of negative patterns to catch:
 - "no [qualifier]" (no laptops, no pets, no dogs)
@@ -2096,7 +2134,7 @@ Return JSON only: {"results": [{"index": 0, "matches": true, "reason": "short re
             {
               role: "system",
               content:
-                "You assess whether places match a user's requirement based on available data. Return JSON only. Only flag as negative when the qualifier keyword appears directly next to restrictive language (e.g. no laptops, laptops forbidden, no pets allowed). Do not treat general negative sentiment (e.g. 'service was not great') as negative evidence for the qualifier. When negative evidence is clearly about the feature, set matches: false and reason to a short phrase like RESTRICTS LAPTOPS or NO PETS ALLOWED.",
+                "You assess whether places match a user's requirement based on available data. Return JSON only. For laptop-friendly or work-friendly: only verify places that are sit-down establishments with tables and seating; mark news stands, kiosks, food stands, takeaway-only as matches: false, reason: NOT A SIT-DOWN VENUE. Only flag as negative when the qualifier keyword appears directly next to restrictive language (e.g. no laptops, no pets allowed). Do not treat general negative sentiment as negative evidence for the qualifier.",
             },
             { role: "user", content: prompt },
           ],
@@ -2886,7 +2924,7 @@ function softenSummaryForEmotionalSupport(summary: string | null | undefined): s
   return softened || "A quiet, peaceful walk";
 }
 
-/** One batch LLM call to generate 6-10 word descriptions for places that only have a generic type. Optional searchQuery tailors descriptions to what the user is looking for (e.g. "laptop-friendly cafes" → focus on wifi/power outlets). */
+/** One batch LLM call to generate 8-12 word descriptions for place cards. Length is tuned to fill exactly 2 lines at mobile width. Optional searchQuery tailors descriptions to what the user is looking for. */
 async function generatePlaceDescriptions(
   places: { name: string; primaryType?: string }[],
   searchQuery?: string | null
@@ -2896,8 +2934,8 @@ async function generatePlaceDescriptions(
   if (!apiKey) return places.map(() => "");
   const list = places.map((p, i) => `${i + 1}. ${p.name}${p.primaryType ? ` (${p.primaryType})` : ""}`).join("\n");
   const contextInstruction = searchQuery?.trim()
-    ? `The user searched for: "${searchQuery.trim()}". For each place, write a 6-10 word description relevant to what they're looking for. You may infer likely features ONLY from the place NAME and TYPE — for example, a place called "Nomad Coffee Lab" is likely specialty coffee; a place with "coworking" in the name likely has wifi. But NEVER invent specific amenities (wifi, power sockets, terrace, outdoor seating) unless the name strongly implies them. When unsure, describe what type of place it is. Keep 6-10 words.`
-    : `For each place, write a 6-10 word description based ONLY on its name and type. Describe what kind of place it is in a warm, specific way. NEVER invent amenities or features (wifi, seating, terrace, decor) — if you don't know, describe the type and vibe the name suggests. Examples: "Bodega La Palma" → "Traditional bodega, wine and tapas". "Cafè del Born" → "Neighborhood café in El Born". Keep 6-10 words.`;
+    ? `The user searched for: "${searchQuery.trim()}". For each place, write a description that is exactly 8-12 words long, relevant to what they're looking for. You may infer likely features ONLY from the place NAME and TYPE. NEVER invent specific amenities unless the name strongly implies them. If the natural description is too short, add a relevant detail (neighborhood, specialty, atmosphere).`
+    : `Generate a description that is exactly 8-12 words long. Always fill 2 full lines of text at mobile width. If the natural description is too short, add a relevant detail (neighborhood, specialty, atmosphere). Base descriptions ONLY on the place name and type. Never invent amenities or features.`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -2913,7 +2951,10 @@ async function generatePlaceDescriptions(
           role: "system",
           content: `${contextInstruction}
 
-Examples (when no search context): 'hearty laksa and roti canai', 'third-wave roastery with courtyard', 'natural wines and small plates'. With context "laptop-friendly cafes": 'plugs at every table, fast wifi', 'quiet back room, good for working'.
+Examples:
+- "Matcha-focused coffee shop with a minimalist Japanese-inspired vibe"
+- "Cozy tea house specializing in ceremonial-grade matcha and desserts"
+- "Specialty coffee and matcha bar in the heart of Eixample"
 
 Never use: experience, discover, explore, authentic, hidden gem. Never invent: wifi, power sockets, outdoor seating, terrace, cozy atmosphere, spacious, artistic decor — unless the place name explicitly contains these words.
 

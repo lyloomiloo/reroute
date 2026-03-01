@@ -1320,10 +1320,10 @@ function PageContent() {
                             </div>
                           )}
 
-                          <div className="flex flex-col flex-1 p-3">
-                            <div className="font-mono font-bold text-sm line-clamp-2 mb-0.5">
+                          <div className="flex flex-col justify-start h-[160px] p-3">
+                            <h3 className="font-mono font-bold text-sm line-clamp-2 mb-0.5">
                               {place.name}
-                            </div>
+                            </h3>
                             {place.qualifierVerified && (place.qualifierReason || placeOptionsQualifierSearched) && (
                               <span className="font-mono text-[10px] text-green-600 uppercase">
                                 ✓ {place.qualifierReason ?? `${placeOptionsQualifierSearched} mentioned in ${place.qualifierSource === "web" ? "web results" : "reviews"}`}
@@ -1334,25 +1334,21 @@ function PageContent() {
                                 {place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`}
                               </span>
                             )}
-                            <div className="flex items-end gap-2 mt-1 flex-1">
-                              <div className="flex-1 min-w-0">
-                                <div className="font-mono text-[10px] text-gray-400">
-                                  {place.rating != null && (
-                                    <span>{place.rating.toFixed(1)} ★ · </span>
-                                  )}
-                                </div>
-                                <div className="font-mono text-[10px] text-gray-500 line-clamp-3">
-                                  {place.description ? place.description.replace(/\.$/, "") : null}
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleRouteToPlace(place)}
-                                className="bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded flex-shrink-0 hover:opacity-90"
-                              >
-                                GO
-                              </button>
-                            </div>
+                            <p className="font-mono text-[10px] text-gray-400 mt-0.5">
+                              {place.rating != null && (
+                                <span>{place.rating.toFixed(1)} ★</span>
+                              )}
+                            </p>
+                            <p className="font-mono text-[10px] text-gray-500 line-clamp-2 flex-grow min-h-0 mt-0.5">
+                              {place.description ? place.description.replace(/\.$/, "") : null}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => handleRouteToPlace(place)}
+                              className="bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded flex-shrink-0 hover:opacity-90 mt-1"
+                            >
+                              GO
+                            </button>
                           </div>
                         </div>
                         </Fragment>
