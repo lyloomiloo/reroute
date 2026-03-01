@@ -9,7 +9,6 @@ import {
   getRouteWithDuration,
   getRouteWithDestination,
   type RoutesResponse,
-  type RouteApiResponse,
   type RouteHighlight,
   type PlaceOption,
   type Intent,
@@ -282,27 +281,16 @@ function PageContent() {
         setLoadingType(t);
       }
       const result = await getRoute(origin, text, { signal: controller.signal, forceNightMode: nightModeOverride });
-      // Handle preflight-only response first (narrows type for RouteApiResponse)
-      const isPreflightOnly =
-        "actionType" in result &&
-        !("recommended" in result) &&
-        !("place_options" in result) &&
-        !("needs_duration" in result) &&
-        !("edge_case" in result);
-      if (isPreflightOnly) {
-        return;
-      }
-      const routeResult = result as RouteApiResponse;
-      console.log("[frontend] API response keys:", Object.keys(routeResult));
-      if (isEdgeCaseResponse(routeResult)) {
+      console.log("[frontend] API response keys:", Object.keys(result));
+      if (isEdgeCaseResponse(result)) {
         clearTimeout(timeout);
-        setEdgeCaseMessage(routeResult.message);
-        setEdgeCaseSuggestion(routeResult.suggestion ?? null);
-        setEdgeCaseTheme(routeResult.theme_name ?? null);
+        setEdgeCaseMessage(result.message);
+        setEdgeCaseSuggestion(result.suggestion ?? null);
+        setEdgeCaseTheme(result.theme_name ?? null);
         return;
       }
-      if (isDurationPrompt(routeResult)) {
-        const durationResult = routeResult as DurationPromptResponse;
+      if (isDurationPrompt(result)) {
+        const durationResult = result as DurationPromptResponse;
         if (durationResult.skip_duration) {
           const duration =
             durationResult.auto_duration ?? [10, 20, 40][Math.floor(Math.random() * 3)];
@@ -331,17 +319,17 @@ function PageContent() {
           setRoutes(null);
           clearDestinationInfo();
         }
-      } else if (isPlaceOptionsResponse(routeResult)) {
+      } else if (isPlaceOptionsResponse(result)) {
         clearTimeout(timeout);
-        console.log("[frontend] Route response:", routeResult.sort_label, routeResult.fallback_message);
-        setPlaceOptions(routeResult.place_options);
-        setPlaceOptionsHeading(routeResult.place_selection_heading ?? "CHOOSE A PLACE");
-        setPlaceOptionsFallbackMessage(routeResult.fallback_message ?? null);
-        setPlaceOptionsSortLabel(routeResult.sort_label ?? null);
-        setPlaceOptionsVerificationSummary(routeResult.verification_summary ?? null);
-        setPlaceOptionsQualifierSearched((routeResult as { detected_qualifier?: string | null }).detected_qualifier ?? routeResult.qualifier_searched ?? null);
-        setPlaceOptionsShownCount(Math.min(5, routeResult.place_options.length));
-        setPlaceOptionsIntent(routeResult.intent);
+        console.log("[frontend] Route response:", result.sort_label, result.fallback_message);
+        setPlaceOptions(result.place_options);
+        setPlaceOptionsHeading(result.place_selection_heading ?? "CHOOSE A PLACE");
+        setPlaceOptionsFallbackMessage(result.fallback_message ?? null);
+        setPlaceOptionsSortLabel(result.sort_label ?? null);
+        setPlaceOptionsVerificationSummary(result.verification_summary ?? null);
+        setPlaceOptionsQualifierSearched((result as { detected_qualifier?: string | null }).detected_qualifier ?? result.qualifier_searched ?? null);
+        setPlaceOptionsShownCount(Math.min(5, result.place_options.length));
+        setPlaceOptionsIntent(result.intent);
         setPlaceOptionsFocusedIndex(0);
         setLastPlaceQuery({ origin, moodText: text });
         setRoutes(null);
@@ -351,15 +339,15 @@ function PageContent() {
         console.log(
           "[frontend] highlights received:",
           JSON.stringify(
-            (routeResult as RoutesResponse).recommended?.highlights?.map((h) => ({
+            (result as RoutesResponse).recommended?.highlights?.map((h) => ({
               name: h.name,
               photoRefs: (h as { photoRefs?: string[] }).photoRefs?.length,
               photo_urls: (h as { photo_urls?: string[] }).photo_urls?.length,
             }))
           )
         );
-        setRoutes(routeResult as RoutesResponse);
-        setDestinationPhoto((routeResult as RoutesResponse).destination_photo ?? null);
+        setRoutes(result as RoutesResponse);
+        setDestinationPhoto((result as RoutesResponse).destination_photo ?? null);
         setLastRouteMoodText(text);
         setLastRouteDurationMinutes(null);
         setShowQuick(false);
@@ -446,17 +434,9 @@ function PageContent() {
       } else {
         const result = await getRoute(origin, lastRouteMoodText, { signal: controller.signal, forceNightMode: nightModeOverride });
         clearTimeout(timeout);
-        const isPreflightOnly =
-          "actionType" in result &&
-          !("recommended" in result) &&
-          !("place_options" in result) &&
-          !("needs_duration" in result) &&
-          !("edge_case" in result);
-        if (isPreflightOnly) return;
-        const routeResult = result as RouteApiResponse;
-        if (isEdgeCaseResponse(routeResult) || isDurationPrompt(routeResult) || isPlaceOptionsResponse(routeResult)) return;
-        setRoutes(routeResult as RoutesResponse);
-        setDestinationPhoto((routeResult as RoutesResponse).destination_photo ?? null);
+        if (isEdgeCaseResponse(result) || isDurationPrompt(result) || isPlaceOptionsResponse(result)) return;
+        setRoutes(result as RoutesResponse);
+        setDestinationPhoto((result as RoutesResponse).destination_photo ?? null);
       }
     } catch (err) {
       clearTimeout(timeout);

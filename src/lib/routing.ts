@@ -162,17 +162,11 @@ export function isEdgeCaseResponse(
 
 const ROUTE_NOT_FOUND_MSG = "Couldn't find a walkable route — try a closer destination.";
 
-export type PreflightResponse = {
-  actionType: "place_search" | "route" | "loop_route";
-  pattern: string;
-  intent: string;
-};
-
 export async function getRoute(
   origin: [number, number],
   moodText: string,
   options?: { signal?: AbortSignal; forceNightMode?: boolean; preflight?: boolean }
-): Promise<RouteApiResponse | PreflightResponse> {
+): Promise<RouteApiResponse> {
   const body: Record<string, unknown> = {
     origin,
     moodText: moodText.trim(),
@@ -194,13 +188,13 @@ export async function getRoute(
 
   const data = await res.json();
 
-  // Preflight: only parse result for loading message
-  if (data && data.actionType != null && (data.actionType === "place_search" || data.actionType === "route" || data.actionType === "loop_route")) {
+  // Preflight request: only return actionType for loading state; do not strip full responses
+  if (options?.preflight === true && data && data.actionType != null && (data.actionType === "place_search" || data.actionType === "route" || data.actionType === "loop_route")) {
     return {
       actionType: data.actionType,
       pattern: data.pattern ?? "mood_only",
       intent: data.intent ?? "calm",
-    } as PreflightResponse;
+    } as unknown as RouteApiResponse;
   }
 
   // Check edge case first (no route, special UI message)
