@@ -65,6 +65,8 @@ export interface PlaceOption {
   qualifierSource?: string | null;
   /** Short reason for verification or unverified (e.g. "CONFIRMED IN REVIEWS", "no mention in reviews"). */
   qualifierReason?: string | null;
+  /** From Google Places — when open_now is false, show "may be closed" warning on GO. */
+  opening_hours?: { open_now?: boolean } | null;
 }
 
 export interface RoutesResponse {

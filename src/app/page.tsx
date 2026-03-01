@@ -144,6 +144,8 @@ function PageContent() {
   const [hasArrived, setHasArrived] = useState(false);
   /** Dev/QA: force night mode for testing (Raval avoid, safe corridors) without changing time. */
   const [nightModeOverride, setNightModeOverride] = useState(false);
+  /** Non-blocking "may be closed" warning when user taps GO on a place that reports closed. */
+  const [closedWarning, setClosedWarning] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userPositionRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -592,6 +594,10 @@ function PageContent() {
 
   const handleRouteToPlace = async (place: PlaceOption) => {
     if (!placeOptionsIntent) return;
+    if (place.opening_hours && place.opening_hours.open_now === false) {
+      setClosedWarning(`${place.name} may be closed right now`);
+      setTimeout(() => setClosedWarning(null), 4000);
+    }
     const destination: [number, number] = [place.lat, place.lng];
     setDestinationPhoto(place.photo_url ?? null);
     setDestinationDescription(place.description ?? null);
@@ -720,6 +726,11 @@ function PageContent() {
           )}
           {/* Map fills remaining space; nav bar above map when navigating */}
           <div className="flex-1 relative overflow-hidden flex flex-col min-h-0 bg-[#f0f0f0]">
+            {closedWarning && (
+              <div className="fixed top-16 left-4 right-4 bg-yellow-50 border border-yellow-300 text-yellow-800 text-xs font-mono px-3 py-2 rounded z-[50]" role="status">
+                ⚠ {closedWarning}
+              </div>
+            )}
             {isNavigating && routes && (
               <div className="flex-shrink-0 bg-white px-4 py-2 border-b border-gray-100 flex justify-between items-start z-[1000]">
                 <div className="min-w-0 flex-1">

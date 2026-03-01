@@ -798,6 +798,17 @@ function scoreRoute(
 // BUILD ROUTE SUMMARY
 // =============================================================
 function buildSummary(duration: number, distance: number, tags: string[], intent: Intent, nightMode?: boolean): string {
+  // Filter out night-only (lighting) tags when it's daytime — they're irrelevant and waste a slot
+  let filteredTags = tags;
+  if (!nightMode && tags.length > 0) {
+    filteredTags = tags.filter(
+      (tag) =>
+        !tag.toLowerCase().includes("well-lit") &&
+        !tag.toLowerCase().includes("well lit") &&
+        !tag.toLowerCase().includes("lighting") &&
+        !tag.toLowerCase().includes("illuminated")
+    );
+  }
   if (intent === "quick" && !nightMode) {
     return "direct route";
   }
@@ -805,12 +816,12 @@ function buildSummary(duration: number, distance: number, tags: string[], intent
   if (nightMode && intent !== "calm" && intent !== "nature" && intent === "quick") {
     return "well-lit streets · busy corridors";
   }
-  if (tags.length > 0) {
+  if (filteredTags.length > 0) {
     if (nightMode && intent !== "calm" && intent !== "nature") {
-      const nightTags = ["well-lit streets", "busy corridors", ...tags];
+      const nightTags = ["well-lit streets", "busy corridors", ...filteredTags];
       return nightTags.slice(0, 3).join(" · ");
     }
-    return tags.slice(0, 3).join(" · ");
+    return filteredTags.slice(0, 3).join(" · ");
   }
   if (nightMode && intent !== "calm" && intent !== "nature") {
     return "well-lit streets · busy corridors";
@@ -1562,17 +1573,23 @@ export interface PlaceOptionResult {
   priceLevel?: number | null;
   /** Weighted keyword mention count (name x5, editorial x2, reviews x1) for final relevance sort. */
   relevanceScore?: number;
+  /** From Google Places currentOpeningHours — when false, show "may be closed" warning on GO. */
+  opening_hours?: { open_now?: boolean } | null;
 }
 
-/** Generate a short relevance tag for a place when no qualifier reason exists. Always show a green tag on every card. */
+/** Generate a short relevance tag from existing data — no API call. Ensures every card has a green tag with zero latency. */
 function generateFallbackTag(
   place: PlaceOptionResult,
   intent: string,
   query: string
 ): string {
   const rating = place.rating ?? 0;
-  if (rating >= 4.7) return "HIGHLY RATED BY VISITORS";
+  const reviewCount = place.userRatingCount ?? (place as { user_ratings_total?: number }).user_ratings_total ?? 0;
+  if (rating >= 4.8) return "HIGHLY RATED BY VISITORS";
+  if (rating >= 4.5 && reviewCount < 100) return "LOCAL FAVORITE";
   if (rating >= 4.5) return "WELL REVIEWED SPOT";
+  if (intent === "discover") return "WORTH DISCOVERING";
+  if (intent === "calm") return "RELAXED ATMOSPHERE";
   if (query && query.length > 0) return "MATCHES YOUR SEARCH";
   return "PICKED FOR YOU";
 }
@@ -2231,39 +2248,51 @@ Return JSON only: {"results": [{"index": 0, "matches": true, "reason": "short re
     };
   }
 
-  // Tier C: Web search for unverified places (up to 5) — SerpAPI
-  if (detectedQualifier && verifiedCount < 2) {
+  // Tier C: Web search for unverified places (up to 5) — SerpAPI. Only for feature/specific qualifiers where web proof matters.
+  const needsWebSearch =
+    detectedQualifier &&
+    /laptop|pet.?friendly|dog.?friendly|vegan|gluten.?free|halal|wheelchair|kid.?friendly|matcha|specific product/i.test(detectedQualifier);
+  if (detectedQualifier && verifiedCount < 2 && needsWebSearch) {
     console.log(`[verify] Tier C — SerpAPI web search for "${detectedQualifier}"`);
 
     if (process.env.SERPAPI_KEY) {
       tierCWebSearchRan = true;
       const unverifiedPlaces = places.filter((p) => !p.qualifierVerified).slice(0, 5);
 
-      for (const place of unverifiedPlaces) {
-        try {
-          const searchQuery = `${place.name} Barcelona ${detectedQualifier}`;
-          const serpData = await cachedWebSearch(searchQuery, place.name ?? "");
-
-          const snippets = (serpData.organic_results ?? [])
-            .map((r) => `${r.title ?? ""} ${r.snippet ?? ""}`.toLowerCase())
-            .join(" ");
-
-          if (
-            snippets.includes(detectedQualifier) ||
-            snippets.includes(detectedQualifier.replace(/-/g, " "))
-          ) {
-            place.qualifierVerified = true;
-            place.qualifierSource = "web";
+      const tierCResults = await Promise.all(
+        unverifiedPlaces.map(async (place) => {
+          try {
+            const searchQuery = `${place.name} Barcelona ${detectedQualifier}`;
+            const serpData = await cachedWebSearch(searchQuery, place.name ?? "");
+            const snippets = (serpData.organic_results ?? [])
+              .map((r) => `${r.title ?? ""} ${r.snippet ?? ""}`.toLowerCase())
+              .join(" ");
+            const matches =
+              snippets.includes(detectedQualifier) ||
+              snippets.includes(detectedQualifier.replace(/-/g, " "));
+            if (!matches) return { place, verified: false as const, reason: null };
             const descriptiveReason = await extractWebVerificationLabel(place.name, detectedQualifier, snippets);
-            place.qualifierReason = descriptiveReason || "MENTIONED IN WEB RESULTS";
-            console.log(`[verify] Tier C: "${place.name}" verified via SerpAPI — ${place.qualifierReason}`);
+            return {
+              place,
+              verified: true as const,
+              reason: descriptiveReason || "MENTIONED IN WEB RESULTS",
+            };
+          } catch (err) {
+            console.log(`[verify] Tier C failed for "${place.name}":`, err);
+            return { place, verified: false as const, reason: null };
           }
-        } catch (err) {
-          console.log(`[verify] Tier C failed for "${place.name}":`, err);
+        })
+      );
+
+      for (const r of tierCResults) {
+        if (r.verified && r.reason) {
+          r.place.qualifierVerified = true;
+          r.place.qualifierSource = "web";
+          r.place.qualifierReason = r.reason;
+          console.log(`[verify] Tier C: "${r.place.name}" verified via SerpAPI — ${r.reason}`);
         }
       }
 
-      // Re-sort verified first
       places.sort((a, b) => (b.qualifierVerified ? 1 : 0) - (a.qualifierVerified ? 1 : 0));
       verifiedCount = places.filter((p) => p.qualifierVerified).length;
     } else {
@@ -2552,7 +2581,7 @@ async function searchPlace(
   let res: Response;
   try {
     const fieldMask =
-      "places.id,places.displayName,places.formattedAddress,places.location,places.photos,places.rating,places.editorialSummary,places.primaryType,places.reviewSummary,places.reviews,places.userRatingCount,places.priceLevel";
+      "places.id,places.displayName,places.formattedAddress,places.location,places.photos,places.rating,places.editorialSummary,places.primaryType,places.reviewSummary,places.reviews,places.userRatingCount,places.priceLevel,places.currentOpeningHours";
     console.log("[places] Requesting fields:", fieldMask);
     res = await fetch("https://places.googleapis.com/v1/places:searchText", {
       method: "POST",
@@ -2569,7 +2598,7 @@ async function searchPlace(
             radius: Math.max(500, Math.min(50000, radiusBarcelona)),
           },
         },
-        maxResultCount: Math.min(20, Math.max(1, maxResults)),
+        maxResultCount: Math.min(10, Math.max(1, maxResults)),
       }),
     });
   } catch (e) {
@@ -2595,6 +2624,7 @@ async function searchPlace(
       reviewSummary?: { text?: string } | null;
       userRatingCount?: number | null;
       priceLevel?: number | null;
+      currentOpeningHours?: { openNow?: boolean };
     }>;
   };
   console.log("[places] searchText query:", query, "found:", (data.places ?? []).length, "results");
@@ -2678,6 +2708,10 @@ async function searchPlace(
       reviews: rawReviews ?? undefined,
       userRatingCount: userRatingCount ?? null,
       priceLevel: priceLevel ?? null,
+      opening_hours:
+        (place as { currentOpeningHours?: { openNow?: boolean } }).currentOpeningHours != null
+          ? { open_now: (place as { currentOpeningHours?: { openNow?: boolean } }).currentOpeningHours?.openNow }
+          : undefined,
     });
   }
   if (needLlmDescription.length > 0) {
@@ -2693,9 +2727,7 @@ async function searchPlace(
           if (item.description) {
             out[d.index].description = stripDescriptionQuotes(trimTrailingPunctuation(truncateToWords(item.description, 7)));
           }
-          if (item.reason) {
-            out[d.index].qualifierReason = item.reason;
-          }
+          // qualifierReason (green tag) is set by ensureRelevanceTag from generateFallbackTag — no per-place GPT
         }
       }
     } catch {
@@ -3018,11 +3050,7 @@ Good: short AND specific — every word should tell you something unique about t
 
 Never use: experience, discover, explore, authentic, hidden gem. Never invent details unless the place name explicitly implies them.
 
-For each line also add a short REASON (3-5 words, UPPERCASE) explaining why this place matches the search. Format: DESCRIPTION | REASON
-Examples: "Specialty matcha in a minimalist space | HIGHLY RATED MATCHA MENU" or "Cool bar with creative drinks | CREATIVE COCKTAILS AND AMBIANCE"
-If no strong reason, use "MATCHES YOUR SEARCH". Never generic like "GOOD PLACE".
-
-Reply with one line per place, in the same order, numbered 1., 2., etc. Nothing else.`,
+Reply with one line per place, in the same order, numbered 1., 2., etc. Description only — no REASON or tag. Nothing else.`,
         },
         { role: "user", content: `Places in Barcelona:\n${list}` },
       ],
@@ -3034,12 +3062,6 @@ Reply with one line per place, in the same order, numbered 1., 2., etc. Nothing 
   const lines = text.split(/\n/).map((s) => s.replace(/^\d+\.\s*/, "").trim()).filter(Boolean);
   return places.map((_, i) => {
     const line = lines[i] ?? "";
-    const pipeIdx = line.indexOf(" | ");
-    if (pipeIdx !== -1) {
-      const description = line.slice(0, pipeIdx).trim();
-      const reason = line.slice(pipeIdx + 3).trim().toUpperCase() || null;
-      return { description, reason };
-    }
     return { description: line, reason: null };
   });
 }
@@ -3936,7 +3958,7 @@ export async function POST(req: NextRequest) {
               console.log("[sort] Checking moodText for subjective qualifier:", moodLower, "detected:", detectedSubjective);
 
               let poiSearchQuery = parsedPoiQuery;
-              let maxSearchResults = 20;
+              let maxSearchResults = 10;
               let qualifierBaseType: string | null = null;
               if (detectedQualifier != null) {
                 qualifierBaseType = parsedPoiQuery != null ? PLACE_TYPE_KEYWORDS.find((kw) => parsedPoiQuery!.toLowerCase().includes(kw)) ?? null : null;
@@ -4202,16 +4224,6 @@ export async function POST(req: NextRequest) {
                   const bMatch = keywords.some((kw) => b.name.toLowerCase().includes(kw) || desc(b).includes(kw)) ? 1 : 0;
                   return bMatch - aMatch; // matches first
                 });
-              }
-              // Minimum 5 results: expand radius if we have fewer than 5 candidates
-              if (places.length < 5 && places.length > 0 && poiSearchQuery) {
-                const expandedRadius = Math.min(Math.ceil(poiSearchRadius * 2.5), 20000);
-                console.log(`[places] Only ${places.length} results, expanding radius to ${expandedRadius}m`);
-                const moreResults = await searchPlace(poiSearchQuery, searchLat, searchLng, maxSearchResults, expandedRadius);
-                const existingIds = new Set(places.map((p) => p.place_id ?? p.name));
-                const newResults = moreResults.filter((r) => !existingIds.has(r.place_id ?? r.name));
-                places = [...places, ...newResults];
-                console.log("[places] After radius expansion:", places.length, "total");
               }
               sortLabel = applySubjectiveSortAndLabel(places, typeof moodText === "string" ? moodText : null);
               if (sortLabel == null && detectedQualifier != null) {
