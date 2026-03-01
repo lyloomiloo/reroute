@@ -106,6 +106,8 @@ function PageContent() {
   const [loadingMorePlaces, setLoadingMorePlaces] = useState(false);
   const [loadingDots, setLoadingDots] = useState(1);
   const [loadingPhase, setLoadingPhase] = useState(0);
+  /** "search" = place search loading (reviews, web); "route" = GO → route to place */
+  const [loadingType, setLoadingType] = useState<"search" | "route">("search");
   const placeOptionsScrollRef = useRef<HTMLDivElement>(null);
   const [customStart, setCustomStart] = useState<{ coords: [number, number]; name: string } | null>(null);
   const [startPointExpanded, setStartPointExpanded] = useState(false);
@@ -244,6 +246,7 @@ function PageContent() {
   const handleMoodSubmit = async (overrideMoodText?: string) => {
     const text = overrideMoodText ?? moodInput;
     setInputFocused(false);
+    setLoadingType("search");
     setIsLoading(true);
     setRouteError(null);
     setDurationPrompt(null);
@@ -364,6 +367,7 @@ function PageContent() {
     setLoadingMorePlaces(true);
     setLoadingDots(1);
     setLoadingPhase(0);
+    setLoadingType("search");
     setIsLoading(true);
     try {
       const res = await fetch("/api/route", {
@@ -577,6 +581,7 @@ function PageContent() {
     setDestinationDescription(place.description ?? null);
     setDestinationRating(place.rating ?? null);
     console.log("[Route here] selected place coordinates:", { lat: place.lat, lng: place.lng, name: place.name });
+    setLoadingType("route");
     setIsLoading(true);
     setPlaceOptions(null);
     setPlaceOptionsHeading("CHOOSE A PLACE");
@@ -728,11 +733,17 @@ function PageContent() {
 `}
                 </pre>
                 <p className="mt-2 font-mono text-xs text-gray-400 lowercase tracking-wide">
-                  {loadingPhase === 0
-                    ? "reading reviews"
-                    : loadingPhase === 1
-                      ? "searching the web"
-                      : "almost there"}
+                  {loadingType === "route"
+                    ? (loadingPhase === 0
+                        ? "mapping your route"
+                        : loadingPhase === 1
+                          ? "finding pleasant streets"
+                          : "almost there")
+                    : (loadingPhase === 0
+                        ? "reading reviews"
+                        : loadingPhase === 1
+                          ? "searching the web"
+                          : "almost there")}
                   {".".repeat(Math.min(loadingDots, 3))}
                 </p>
               </div>
@@ -1284,11 +1295,11 @@ function PageContent() {
                             </div>
                           )}
                           <div
-                            className="w-[240px] flex-shrink-0 snap-start flex flex-col rounded-lg border border-gray-200 bg-white overflow-hidden"
+                            className="w-[240px] min-h-[280px] max-h-[280px] flex-shrink-0 snap-start flex flex-col rounded-lg border border-gray-200 bg-white overflow-hidden"
                           >
                           {photoUrls.length > 0 && (
-                            <div className="relative w-full h-32 overflow-hidden rounded-t-lg flex-shrink-0">
-                              <div className="flex overflow-x-auto h-32 scrollbar-hide snap-x snap-mandatory w-full">
+                            <div className="relative w-full h-[160px] overflow-hidden rounded-t-lg flex-shrink-0">
+                              <div className="flex overflow-x-auto h-[160px] scrollbar-hide snap-x snap-mandatory w-full">
                                 {photoUrls.map((url, j) => (
                                   <Image
                                     key={j}
@@ -1296,7 +1307,7 @@ function PageContent() {
                                     alt=""
                                     width={400}
                                     height={300}
-                                    className="w-full h-32 flex-shrink-0 object-cover rounded-t-lg snap-start"
+                                    className="w-full h-[160px] flex-shrink-0 object-cover rounded-t-lg snap-start"
                                     unoptimized
                                   />
                                 ))}
@@ -1320,8 +1331,8 @@ function PageContent() {
                             </div>
                           )}
 
-                          <div className="flex flex-col justify-start items-start h-[160px] p-3">
-                            <h3 className="font-mono font-bold text-sm line-clamp-2 mb-0.5 w-full">
+                          <div className="flex-1 flex flex-col min-h-0 p-3">
+                            <h3 className="font-mono font-bold text-sm line-clamp-1 mb-0.5 w-full">
                               {place.name}
                             </h3>
                             {place.qualifierVerified && (place.qualifierReason || placeOptionsQualifierSearched) && (
@@ -1334,21 +1345,23 @@ function PageContent() {
                                 {place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`}
                               </span>
                             )}
-                            <p className="font-mono text-[10px] text-gray-400 mt-0.5">
-                              {place.rating != null && (
-                                <span>{place.rating.toFixed(1)} ★</span>
-                              )}
-                            </p>
-                            <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.4em] text-left mt-0.5 w-full">
+                            <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full mt-0.5">
                               {place.description != null ? place.description.replace(/\.$/, "") : null}
                             </p>
-                            <button
-                              type="button"
-                              onClick={() => handleRouteToPlace(place)}
-                              className="bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded flex-shrink-0 hover:opacity-90 mt-1"
-                            >
-                              GO
-                            </button>
+                            <div className="mt-auto pt-1 flex flex-col gap-1">
+                              <p className="font-mono text-[10px] text-gray-400">
+                                {place.rating != null && (
+                                  <span>{place.rating.toFixed(1)} ★</span>
+                                )}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => handleRouteToPlace(place)}
+                                className="bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded flex-shrink-0 hover:opacity-90 w-full"
+                              >
+                                GO
+                              </button>
+                            </div>
                           </div>
                         </div>
                         </Fragment>

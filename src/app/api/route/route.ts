@@ -1989,12 +1989,14 @@ async function cachedWebSearch(query: string, placeName: string): Promise<SerpAp
   const results = await fetchSerpApiResults(query);
 
   if (supabase) {
-    supabase
-      .from("web_search_cache")
-      .upsert(
-        { query_key: queryKey, results, created_at: new Date().toISOString() },
-        { onConflict: "query_key" }
-      )
+    Promise.resolve(
+      supabase
+        .from("web_search_cache")
+        .upsert(
+          { query_key: queryKey, results, created_at: new Date().toISOString() },
+          { onConflict: "query_key" }
+        )
+    )
       .then(() => console.log(`[web-cache] STORED: ${queryKey}`))
       .catch((err) => console.error("[web-cache] Store error:", err));
   }
