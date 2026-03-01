@@ -1250,7 +1250,7 @@ function PageContent() {
                 <div className="px-4 py-3">
                   <div className="flex justify-between items-center mb-2">
                     {/* Headline — either generated summary or default */}
-                    <h2 className="font-mono font-bold text-lg tracking-tight uppercase">
+                    <h2 className="font-mono font-bold text-[1.29rem] tracking-tight uppercase">
                       {placeOptionsSortLabel ?? placeOptionsHeading ?? "CHOOSE A PLACE"}
                     </h2>
                     <button
