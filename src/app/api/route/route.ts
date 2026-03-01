@@ -1891,15 +1891,13 @@ function normalizeQualifier(qualifier: string | null): string | null {
   return qualifier;
 }
 
-/** True only when the verification reason explicitly says the place RESTRICTS/FORBIDS the feature. Absence of evidence (e.g. "no mention in reviews") must NOT be treated as negative — those places stay as unverified. */
+/** True only when the verification reason contains EXPLICIT negative evidence (forbid, restrict, not allowed, etc.). Generic/no-evidence reasons → false so the place stays as unverified. */
 function isNegativeDisqualifier(reason: string | null | undefined): boolean {
   if (!reason || typeof reason !== "string") return false;
-  const r = reason.toUpperCase();
-  if (/NO\s+MENTION|NOT\s+MENTIONED|INSUFFICIENT|NO\s+EVIDENCE|NO\s+REVIEWS|COULDN'T\s+VERIFY|UNKNOWN|NO\s+DATA/i.test(r)) return false;
-  return (
-    /RESTRICTS\s|FORBIDS\s|NO\s+.+ALLOWED|NOT\s+PET\s+FRIENDLY|NOT\s+DOG\s+FRIENDLY|NOT\s+WHEELCHAIR|PROHIBITS|BANS\s|NO\s+LAPTOPS?|NO\s+PETS?|NO\s+OUTDOOR/.test(r) ||
-    /TABLES?\s+FORBID|LAPTOPS?\s+NOT\s+ALLOWED|NOT\s+ACCESSIBLE/.test(r)
-  );
+  const r = reason.trim();
+  if (!r) return false;
+  if (/no\s+mention|not\s+mentioned|insufficient|no\s+evidence|no\s+reviews|couldn't\s+verify|unknown|no\s+data/i.test(r)) return false;
+  return /\b(forbid|forbids|restrict|restricts|not\s+allowed|no\s+(pets?|dogs?|laptops?|wifi|outdoor)|banned|prohibited|not\s+(pet|dog)\s+friendly|not\s+wheelchair|not\s+accessible)\b/i.test(r);
 }
 
 /** Extract a short descriptive label from web snippets for verification (e.g. "KNOWN FOR MATCHA LATTES"). Returns null if too vague. */
@@ -3679,9 +3677,8 @@ export async function POST(req: NextRequest) {
                 console.log(`[route] Search centered on "${poiAnchor}":`, searchCenter);
               }
               // When user has an area (e.g. "wine bar in Born") but searchCenter is still origin, geocode area and use as center
-              const hasArea = !!parsedArea;
-              if (hasArea && searchCenter[0] === originCoords[0] && searchCenter[1] === originCoords[1]) {
-                const areaFallback = parsedArea ? getFallbackCoordsForDestination(parsedArea) : null;
+              if (parsedArea && searchCenter[0] === originCoords[0] && searchCenter[1] === originCoords[1]) {
+                const areaFallback = getFallbackCoordsForDestination(parsedArea);
                 if (areaFallback) {
                   searchCenter = areaFallback;
                 } else {
@@ -3707,17 +3704,17 @@ export async function POST(req: NextRequest) {
                 poiSearchRadius = 1000; // 1km — explicit "near me"
               } else if (detectedQualifier) {
                 poiSearchRadius = 15000; // qualifier search — accuracy over proximity, search all BCN
-              } else if (hasArea) {
+              } else if (parsedArea) {
                 poiSearchRadius = 2000; // 2km — around the named area
               } else {
                 poiSearchRadius = 8000; // 8km — general search
               }
-              console.log(`[route] POI search radius: ${poiSearchRadius}m (nearby=${isNearby}, qualifier=${!!detectedQualifier}, area=${hasArea})`);
+              console.log(`[route] POI search radius: ${poiSearchRadius}m (nearby=${isNearby}, qualifier=${!!detectedQualifier}, area=${!!parsedArea})`);
 
               // For citywide qualifier searches, use Barcelona center so results aren't clustered near user
-              const searchLat = detectedQualifier && !isNearby && !hasArea ? 41.3874 : searchCenter[0];
-              const searchLng = detectedQualifier && !isNearby && !hasArea ? 2.1686 : searchCenter[1];
-              if (detectedQualifier && !isNearby && !hasArea) {
+              const searchLat = detectedQualifier && !isNearby && !parsedArea ? 41.3874 : searchCenter[0];
+              const searchLng = detectedQualifier && !isNearby && !parsedArea ? 2.1686 : searchCenter[1];
+              if (detectedQualifier && !isNearby && !parsedArea) {
                 console.log("[route] Qualifier search: using Barcelona center", searchLat, searchLng);
               }
 
