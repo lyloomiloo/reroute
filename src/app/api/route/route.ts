@@ -1891,13 +1891,14 @@ function normalizeQualifier(qualifier: string | null): string | null {
   return qualifier;
 }
 
-/** True when the verification reason indicates the place restricts/forbids the feature — such places are excluded from results. */
+/** True only when the verification reason explicitly says the place RESTRICTS/FORBIDS the feature. Absence of evidence (e.g. "no mention in reviews") must NOT be treated as negative — those places stay as unverified. */
 function isNegativeDisqualifier(reason: string | null | undefined): boolean {
   if (!reason || typeof reason !== "string") return false;
   const r = reason.toUpperCase();
+  if (/NO\s+MENTION|NOT\s+MENTIONED|INSUFFICIENT|NO\s+EVIDENCE|NO\s+REVIEWS|COULDN'T\s+VERIFY|UNKNOWN|NO\s+DATA/i.test(r)) return false;
   return (
-    /RESTRICTS\s|FORBIDS\s|NO\s+.+ALLOWED|NOT\s+.+FRIENDLY|NOT\s+WHEELCHAIR|PROHIBITS|BANS\s|NO\s+LAPTOP|NO\s+PET|NO\s+OUTDOOR/.test(r) ||
-    /TABLES\s+FORBID|LAPTOPS\s+NOT\s+ALLOWED|NOT\s+ACCESSIBLE/.test(r)
+    /RESTRICTS\s|FORBIDS\s|NO\s+.+ALLOWED|NOT\s+PET\s+FRIENDLY|NOT\s+DOG\s+FRIENDLY|NOT\s+WHEELCHAIR|PROHIBITS|BANS\s|NO\s+LAPTOPS?|NO\s+PETS?|NO\s+OUTDOOR/.test(r) ||
+    /TABLES?\s+FORBID|LAPTOPS?\s+NOT\s+ALLOWED|NOT\s+ACCESSIBLE/.test(r)
   );
 }
 

@@ -729,10 +729,11 @@ function PageContent() {
                 </pre>
                 <p className="mt-2 font-mono text-xs text-gray-400 lowercase tracking-wide">
                   {loadingPhase === 0
-                    ? "searching reviews..."
+                    ? "searching reviews"
                     : loadingPhase === 1
-                      ? "searching the web..."
-                      : "almost there..."}
+                      ? "searching the web"
+                      : "almost there"}
+                  {".".repeat(Math.min(loadingDots, 3))}
                 </p>
               </div>
             )}
