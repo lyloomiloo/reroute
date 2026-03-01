@@ -446,9 +446,17 @@ function PageContent() {
       } else {
         const result = await getRoute(origin, lastRouteMoodText, { signal: controller.signal, forceNightMode: nightModeOverride });
         clearTimeout(timeout);
-        if (isEdgeCaseResponse(result) || isDurationPrompt(result) || isPlaceOptionsResponse(result)) return;
-        setRoutes(result as RoutesResponse);
-        setDestinationPhoto((result as RoutesResponse).destination_photo ?? null);
+        const isPreflightOnly =
+          "actionType" in result &&
+          !("recommended" in result) &&
+          !("place_options" in result) &&
+          !("needs_duration" in result) &&
+          !("edge_case" in result);
+        if (isPreflightOnly) return;
+        const routeResult = result as RouteApiResponse;
+        if (isEdgeCaseResponse(routeResult) || isDurationPrompt(routeResult) || isPlaceOptionsResponse(routeResult)) return;
+        setRoutes(routeResult as RoutesResponse);
+        setDestinationPhoto((routeResult as RoutesResponse).destination_photo ?? null);
       }
     } catch (err) {
       clearTimeout(timeout);
