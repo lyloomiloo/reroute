@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense, Fragment } from "react";
 import Image from "next/image";
 import PhoneFrame from "@/components/PhoneFrame";
 import MapView from "@/components/MapView";
@@ -95,11 +95,17 @@ function PageContent() {
   } | null>(null);
   const [placeOptions, setPlaceOptions] = useState<PlaceOption[] | null>(null);
   const [placeOptionsHeading, setPlaceOptionsHeading] = useState<string>("CHOOSE A PLACE");
+  const [placeOptionsFallbackMessage, setPlaceOptionsFallbackMessage] = useState<string | null>(null);
+  const [placeOptionsSortLabel, setPlaceOptionsSortLabel] = useState<string | null>(null);
+  const [placeOptionsVerificationSummary, setPlaceOptionsVerificationSummary] = useState<string | null>(null);
+  const [placeOptionsQualifierSearched, setPlaceOptionsQualifierSearched] = useState<string | null>(null);
   const [placeOptionsShownCount, setPlaceOptionsShownCount] = useState(5);
   const [placeOptionsIntent, setPlaceOptionsIntent] = useState<Intent | null>(null);
   const [placeOptionsFocusedIndex, setPlaceOptionsFocusedIndex] = useState(0);
   const [lastPlaceQuery, setLastPlaceQuery] = useState<{ origin: [number, number]; moodText: string } | null>(null);
   const [loadingMorePlaces, setLoadingMorePlaces] = useState(false);
+  const [loadingDots, setLoadingDots] = useState(1);
+  const [loadingPhase, setLoadingPhase] = useState(0);
   const placeOptionsScrollRef = useRef<HTMLDivElement>(null);
   const [customStart, setCustomStart] = useState<{ coords: [number, number]; name: string } | null>(null);
   const [startPointExpanded, setStartPointExpanded] = useState(false);
@@ -151,6 +157,24 @@ function PageContent() {
     const blink = setInterval(() => setColonVisible((v) => !v), 500);
     return () => clearInterval(blink);
   }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setLoadingDots(1);
+      setLoadingPhase(0);
+      return;
+    }
+    const dotInterval = setInterval(() => {
+      setLoadingDots((prev) => (prev >= 3 ? 1 : prev + 1));
+    }, 500);
+    const phase1 = setTimeout(() => setLoadingPhase(1), 3000);
+    const phase2 = setTimeout(() => setLoadingPhase(2), 6000);
+    return () => {
+      clearInterval(dotInterval);
+      clearTimeout(phase1);
+      clearTimeout(phase2);
+    };
+  }, [isLoading]);
 
   useEffect(() => {
     return () => {
@@ -225,6 +249,10 @@ function PageContent() {
     setDurationPrompt(null);
     setPlaceOptions(null);
     setPlaceOptionsHeading("CHOOSE A PLACE");
+    setPlaceOptionsFallbackMessage(null);
+    setPlaceOptionsSortLabel(null);
+    setPlaceOptionsVerificationSummary(null);
+    setPlaceOptionsQualifierSearched(null);
     setPlaceOptionsShownCount(5);
     setLastPlaceQuery(null);
     setEdgeCaseMessage(null);
@@ -274,8 +302,13 @@ function PageContent() {
         }
       } else if (isPlaceOptionsResponse(result)) {
         clearTimeout(timeout);
+        console.log("[frontend] Route response:", result.sort_label, result.fallback_message);
         setPlaceOptions(result.place_options);
         setPlaceOptionsHeading(result.place_selection_heading ?? "CHOOSE A PLACE");
+        setPlaceOptionsFallbackMessage(result.fallback_message ?? null);
+        setPlaceOptionsSortLabel(result.sort_label ?? null);
+        setPlaceOptionsVerificationSummary(result.verification_summary ?? null);
+        setPlaceOptionsQualifierSearched((result as { detected_qualifier?: string | null }).detected_qualifier ?? result.qualifier_searched ?? null);
         setPlaceOptionsShownCount(Math.min(5, result.place_options.length));
         setPlaceOptionsIntent(result.intent);
         setPlaceOptionsFocusedIndex(0);
@@ -313,6 +346,10 @@ function PageContent() {
   const dismissPlaceOptions = () => {
     setPlaceOptions(null);
     setPlaceOptionsHeading("CHOOSE A PLACE");
+    setPlaceOptionsFallbackMessage(null);
+    setPlaceOptionsSortLabel(null);
+    setPlaceOptionsVerificationSummary(null);
+    setPlaceOptionsQualifierSearched(null);
     setPlaceOptionsShownCount(5);
     setPlaceOptionsIntent(null);
     setPlaceOptionsFocusedIndex(0);
@@ -321,6 +358,9 @@ function PageContent() {
 
   const handleLoadMore = async () => {
     if (!lastPlaceQuery || loadingMorePlaces) return;
+    const moodText = (lastPlaceQuery as { moodText?: string }).moodText ?? "";
+    const excludeIds = placeOptions?.map((p) => (p as { place_id?: string | null }).place_id ?? p.name).filter(Boolean) ?? [];
+    console.log("[frontend] Refresh / Load more clicked, re-sending:", moodText, "offset:", placeOptions?.length ?? 0, "exclude_place_ids:", excludeIds.length);
     setLoadingMorePlaces(true);
     try {
       const res = await fetch("/api/route", {
@@ -329,11 +369,18 @@ function PageContent() {
         body: JSON.stringify({
           ...lastPlaceQuery,
           search_offset: placeOptions?.length ?? 0,
+          exclude_place_ids: excludeIds,
         }),
       });
       const data = await res.json();
       if (Array.isArray(data.place_options) && data.place_options.length > 0) {
         setPlaceOptions((prev) => [...(prev ?? []), ...data.place_options]);
+      }
+      if (data.sort_label != null && String(data.sort_label).trim() !== "") setPlaceOptionsSortLabel(data.sort_label);
+      if (data.fallback_message != null) setPlaceOptionsFallbackMessage(data.fallback_message);
+      if (data.verification_summary != null) setPlaceOptionsVerificationSummary(data.verification_summary);
+      if (data.detected_qualifier != null || data.qualifier_searched != null) {
+        setPlaceOptionsQualifierSearched(data.detected_qualifier ?? data.qualifier_searched ?? null);
       }
     } catch (e) {
       console.error("Load more places error:", e);
@@ -420,6 +467,10 @@ function PageContent() {
     setRoutes(null);
     setPlaceOptions(null);
     setPlaceOptionsHeading("CHOOSE A PLACE");
+    setPlaceOptionsFallbackMessage(null);
+    setPlaceOptionsSortLabel(null);
+    setPlaceOptionsVerificationSummary(null);
+    setPlaceOptionsQualifierSearched(null);
     setPlaceOptionsShownCount(5);
     setMoodInput("");
     setLastRouteMoodText("");
@@ -525,6 +576,10 @@ function PageContent() {
     setIsLoading(true);
     setPlaceOptions(null);
     setPlaceOptionsHeading("CHOOSE A PLACE");
+    setPlaceOptionsFallbackMessage(null);
+    setPlaceOptionsSortLabel(null);
+    setPlaceOptionsVerificationSummary(null);
+    setPlaceOptionsQualifierSearched(null);
     setPlaceOptionsShownCount(5);
     setRouteError(null);
     const controller = new AbortController();
@@ -668,8 +723,15 @@ function PageContent() {
  / \\
 `}
                 </pre>
-                <p className="mt-2 text-sm text-gray-600 font-mono">loading walk</p>
-        </div>
+                <p className="mt-2 font-mono text-xs text-gray-400 lowercase tracking-wide">
+                  {loadingPhase === 0
+                    ? "searching reviews..."
+                    : loadingPhase === 1
+                      ? "searching the web..."
+                      : "almost there..."}
+                  {".".repeat(loadingDots)}
+                </p>
+              </div>
             )}
               <MapView
                 center={customStart?.coords ?? mapCenter ?? BARCELONA_CENTER}
@@ -980,6 +1042,10 @@ function PageContent() {
                       setDurationPrompt(null);
                       setPlaceOptions(null);
                       setPlaceOptionsHeading("CHOOSE A PLACE");
+                      setPlaceOptionsFallbackMessage(null);
+                      setPlaceOptionsSortLabel(null);
+                      setPlaceOptionsVerificationSummary(null);
+                      setPlaceOptionsQualifierSearched(null);
                       setPlaceOptionsShownCount(5);
                     }
                     setTimeout(() => {
@@ -1040,6 +1106,10 @@ function PageContent() {
                     setDurationPrompt(null);
                     setPlaceOptions(null);
                     setPlaceOptionsHeading("CHOOSE A PLACE");
+                    setPlaceOptionsFallbackMessage(null);
+                    setPlaceOptionsSortLabel(null);
+                    setPlaceOptionsVerificationSummary(null);
+                    setPlaceOptionsQualifierSearched(null);
                     setPlaceOptionsShownCount(5);
                   }}
                   className="group inline-flex items-center gap-1.5 py-0.5 font-mono text-xs font-normal tracking-wide text-[#4A90D9]/70 hover:text-[#4A90D9] reroute-uppercase whitespace-nowrap"
@@ -1181,9 +1251,10 @@ function PageContent() {
               {placeOptions && placeOptions.length > 0 && (
                 <div className="px-4 py-3">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-mono font-bold text-lg tracking-wide">
-                      {placeOptionsHeading}
-                    </span>
+                    {/* Headline — either generated summary or default */}
+                    <h2 className="font-mono font-bold text-lg tracking-tight uppercase">
+                      {placeOptionsSortLabel ?? placeOptionsHeading ?? "CHOOSE A PLACE"}
+                    </h2>
                     <button
                       type="button"
                       onClick={dismissPlaceOptions}
@@ -1193,9 +1264,16 @@ function PageContent() {
                       ✕
                     </button>
                   </div>
-                  <p className="font-mono font-bold text-[11px] text-[#4A90D9] tracking-wide mt-1 mb-2">
-                    BETA · RESULTS MAY NOT BE PERFECT · CHECK REVIEWS
-                  </p>
+                  {/* Subtitle — fallback message or beta disclaimer (count headline removed) */}
+                  {placeOptionsFallbackMessage ? (
+                    <p className="font-mono text-xs text-blue-400 uppercase tracking-wide">
+                      {placeOptionsFallbackMessage}
+                    </p>
+                  ) : (
+                    <p className="font-mono text-xs text-blue-400 uppercase tracking-wide">
+                      BETA · RESULTS MAY NOT BE PERFECT · CHECK REVIEWS
+                    </p>
+                  )}
 
                   <div
                     ref={placeOptionsScrollRef}
@@ -1207,11 +1285,20 @@ function PageContent() {
                         : place.photo_url
                           ? [place.photo_url]
                           : [];
+                      const showAlsoNearbyDivider =
+                        !place.qualifierVerified && i > 0 && placeOptions[i - 1]?.qualifierVerified === true;
                       return (
-                        <div
-                          key={i}
-                          className="w-[240px] flex-shrink-0 snap-start flex flex-col rounded-lg border border-gray-200 bg-white overflow-hidden"
-                        >
+                        <Fragment key={i}>
+                          {showAlsoNearbyDivider && (
+                            <div className="flex items-center w-full px-2 my-2 flex-shrink-0 snap-start">
+                              <div className="flex-1 h-px bg-gray-200" />
+                              <span className="font-mono text-[10px] text-gray-400 px-2 uppercase">also nearby</span>
+                              <div className="flex-1 h-px bg-gray-200" />
+                            </div>
+                          )}
+                          <div
+                            className="w-[240px] flex-shrink-0 snap-start flex flex-col rounded-lg border border-gray-200 bg-white overflow-hidden"
+                          >
                           {photoUrls.length > 0 && (
                             <div className="relative w-full h-32 overflow-hidden rounded-t-lg flex-shrink-0">
                               <div className="flex overflow-x-auto h-32 scrollbar-hide snap-x snap-mandatory w-full">
@@ -1250,6 +1337,16 @@ function PageContent() {
                             <div className="font-mono font-bold text-sm truncate">
                               {place.name}
                             </div>
+                            {place.qualifierVerified && (place.qualifierReason || placeOptionsQualifierSearched) && (
+                              <span className="font-mono text-[10px] text-green-600 uppercase">
+                                ✓ {place.qualifierReason ?? `${placeOptionsQualifierSearched} mentioned in ${place.qualifierSource === "web" ? "web results" : "reviews"}`}
+                              </span>
+                            )}
+                            {!place.qualifierVerified && placeOptionsQualifierSearched && (
+                              <span className="font-mono text-[10px] text-gray-400 uppercase">
+                                {place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`}
+                              </span>
+                            )}
                             <div className="flex items-end gap-2 mt-1 flex-1">
                               <div className="flex-1 min-w-0">
                                 <div className="font-mono text-[10px] text-gray-400">
@@ -1271,6 +1368,7 @@ function PageContent() {
                             </div>
                           </div>
                         </div>
+                        </Fragment>
                       );
                     })}
 

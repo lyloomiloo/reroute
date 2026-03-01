@@ -38,7 +38,7 @@ const GENERIC_POI_NAME_PATTERNS = [
   /^peaceful\s+(block|stretch|area)$/i,
   /^green\s+(path|stretch|area)$/i,
   /^historic\s+stretch$/i,
-  /^well-kept\s+street/i,
+  /^pleasant\s+street/i,
   /^pedestrian\s+(walk|stretch|area)$/i,
   /^discover\s+area$/i,
   /^nature\s+area$/i,

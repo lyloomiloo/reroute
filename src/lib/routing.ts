@@ -59,6 +59,10 @@ export interface PlaceOption {
   photo_urls?: string[];
   /** Google Places primaryType (e.g. restaurant, cafe) — used to default to fastest route for establishments. */
   primary_type?: string | null;
+  /** Set when place was verified for a qualifier search (e.g. laptop-friendly). */
+  qualifierVerified?: boolean;
+  /** "editorial" | "review" | "web" when qualifierVerified is true. */
+  qualifierSource?: string | null;
 }
 
 export interface RoutesResponse {
@@ -95,6 +99,18 @@ export interface PlaceOptionsResponse {
   intent: Intent;
   /** e.g. "WHICH ONE?" for destination disambiguation; default "CHOOSE A PLACE" */
   place_selection_heading?: string;
+  /** When we broadened the search (e.g. matcha → cafe), short explanation for the user */
+  fallback_message?: string | null;
+  /** "places_data" | "web_search" | "unverified" for qualifier verification */
+  verification_method?: string;
+  /** The qualifier we searched for (e.g. "laptop-friendly") when verification ran */
+  qualifier_searched?: string | null;
+  /** Subjective sort rationale (e.g. "sorted by highest rated") when a subjective qualifier was detected */
+  sort_label?: string | null;
+  /** When qualifier verification found results (e.g. "1 CONFIRMED IN REVIEWS · 2 CONFIRMED VIA WEB") */
+  verification_summary?: string | null;
+  /** True when Tier C web search (SerpAPI) was run for verification */
+  used_web_search?: boolean;
 }
 
 export interface RouteTypePromptResponse {
@@ -201,10 +217,24 @@ export async function getRoute(
 
   // Place selection (multiple destinations)
   if (data.needs_place_selection === true && Array.isArray(data.place_options) && data.place_options.length > 0) {
+    const ext = data as {
+      place_selection_heading?: string;
+      fallback_message?: string | null;
+      verification_method?: string;
+      qualifier_searched?: string | null;
+      sort_label?: string | null;
+      verification_summary?: string | null;
+    };
+    console.log("[routing] Place options response - sort_label:", ext.sort_label, "fallback_message:", ext.fallback_message, "verification_summary:", ext.verification_summary);
     return {
       place_options: data.place_options,
       intent: (data.intent as Intent) ?? "calm",
-      place_selection_heading: (data as { place_selection_heading?: string }).place_selection_heading,
+      place_selection_heading: ext.place_selection_heading,
+      fallback_message: ext.fallback_message ?? null,
+      verification_method: ext.verification_method,
+      qualifier_searched: ext.qualifier_searched ?? null,
+      sort_label: ext.sort_label ?? null,
+      verification_summary: ext.verification_summary ?? null,
     } as PlaceOptionsResponse;
   }
 
