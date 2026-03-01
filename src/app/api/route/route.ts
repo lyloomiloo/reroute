@@ -2540,7 +2540,7 @@ async function searchPlace(
             radius: Math.max(500, Math.min(50000, radiusBarcelona)),
           },
         },
-        maxResultCount: Math.min(10, Math.max(1, maxResults)),
+        maxResultCount: Math.min(20, Math.max(1, maxResults)),
       }),
     });
   } catch (e) {
@@ -3859,7 +3859,7 @@ export async function POST(req: NextRequest) {
               console.log("[sort] Checking moodText for subjective qualifier:", moodLower, "detected:", detectedSubjective);
 
               let poiSearchQuery = parsedPoiQuery;
-              let maxSearchResults = 10;
+              let maxSearchResults = 20;
               let qualifierBaseType: string | null = null;
               if (detectedQualifier != null) {
                 qualifierBaseType = parsedPoiQuery != null ? PLACE_TYPE_KEYWORDS.find((kw) => parsedPoiQuery!.toLowerCase().includes(kw)) ?? null : null;
@@ -3867,7 +3867,6 @@ export async function POST(req: NextRequest) {
                   poiSearchQuery = `${qualifierBaseType} Barcelona`; // fallback query if full query returns few results
                   console.log("[route] Feature qualifier search: will try full query first, fallback:", poiSearchQuery);
                 }
-                maxSearchResults = 15;
               }
 
               console.log("[route] search_offset received:", body.search_offset);
@@ -4126,6 +4125,16 @@ export async function POST(req: NextRequest) {
                   return bMatch - aMatch; // matches first
                 });
               }
+              // Minimum 5 results: expand radius if we have fewer than 5 candidates
+              if (places.length < 5 && places.length > 0 && poiSearchQuery) {
+                const expandedRadius = Math.min(Math.ceil(poiSearchRadius * 2.5), 20000);
+                console.log(`[places] Only ${places.length} results, expanding radius to ${expandedRadius}m`);
+                const moreResults = await searchPlace(poiSearchQuery, searchLat, searchLng, maxSearchResults, expandedRadius);
+                const existingIds = new Set(places.map((p) => p.place_id ?? p.name));
+                const newResults = moreResults.filter((r) => !existingIds.has(r.place_id ?? r.name));
+                places = [...places, ...newResults];
+                console.log("[places] After radius expansion:", places.length, "total");
+              }
               sortLabel = applySubjectiveSortAndLabel(places, typeof moodText === "string" ? moodText : null);
               if (sortLabel == null && detectedQualifier != null) {
                 const base = parsedPoiQuery != null ? PLACE_TYPE_KEYWORDS.find((kw) => parsedPoiQuery!.toLowerCase().includes(kw)) : undefined;
@@ -4157,6 +4166,18 @@ export async function POST(req: NextRequest) {
                   if (verifiedMain.length >= 1) {
                     placeOptionsMain = [...verifiedMain, ...unverifiedWithSignalMain.slice(0, 2)];
                     console.log("[filter] Showing", verifiedMain.length, "verified +", Math.min(unverifiedWithSignalMain.length, 2), "alternatives (with relevance signal)");
+                  }
+                }
+                // Minimum 5 results: backfill with highest-rated unverified candidates if needed
+                if (placeOptionsMain.length < 5) {
+                  const inMain = new Set(placeOptionsMain.map((p) => p.place_id ?? p.name));
+                  const backfill = verificationMain.places
+                    .filter((c) => !inMain.has(c.place_id ?? c.name))
+                    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
+                    .slice(0, 5 - placeOptionsMain.length);
+                  placeOptionsMain = [...placeOptionsMain, ...backfill];
+                  if (backfill.length > 0) {
+                    console.log("[places] Backfilled", backfill.length, "to reach minimum 5:", backfill.map((p) => p.name));
                   }
                 }
                 const mergedFallback = fallbackMessage ?? verificationMain.fallbackMessage;
@@ -5350,14 +5371,11 @@ export async function POST(req: NextRequest) {
       recommended = candidates.reduce((a, b) => (a.score > b.score ? a : b));
     }
 
-    // Quick: shortest-duration alternative (true fastest when intent is quick, else from candidates)
-    let quickRaw: { coordinates: [number, number][]; duration: number; distance: number };
-    if (intent === "quick") {
-      const rawRoutes = await fetchOrsRoutes(originCoords, destCoords, "quick", forceAvoidZones);
-      quickRaw = rawRoutes.reduce((a, b) => (a.duration < b.duration ? a : b));
-    } else {
-      quickRaw = candidates.reduce((a, b) => (a.duration < b.duration ? a : b));
-    }
+    // Quick: always the true fastest route (separate ORS call) so we can show "pleasant vs faster" for any intent
+    const rawQuickRoutes = await fetchOrsRoutes(originCoords, destCoords, "quick", forceAvoidZones);
+    const quickRaw = rawQuickRoutes.length > 0
+      ? rawQuickRoutes.reduce((a, b) => (a.duration < b.duration ? a : b))
+      : candidates.reduce((a, b) => (a.duration < b.duration ? a : b));
     const { score: quickScore, breakdown: quickBreakdown, tags: quickTags } = scoreRoute(
       quickRaw.coordinates,
       "quick",
@@ -5558,7 +5576,7 @@ export async function POST(req: NextRequest) {
       ...(quickPois && quickPois.length > 0 && { pois: quickPois }),
     };
 
-    const routesAreSimilar = Math.abs(recommended.duration - quick.duration) < 30;
+    const routesAreSimilar = Math.abs(recommended.duration - quick.duration) < 60;
 
     return NextResponse.json({
       recommended: defaultToFastest ? quickPayload : recommendedPayload,

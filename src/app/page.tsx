@@ -107,7 +107,8 @@ function PageContent() {
   const [loadingDots, setLoadingDots] = useState(1);
   const [loadingPhase, setLoadingPhase] = useState(0);
   /** "search" = place search loading (reviews, web); "route" = GO → route to place */
-  const [loadingType, setLoadingType] = useState<"search" | "route">("search");
+  /** "route" = destination (walk to X); "search" = place search (cafes, matcha); "walk" = mood/loop/themed */
+  const [loadingType, setLoadingType] = useState<"route" | "search" | "walk">("walk");
   const placeOptionsScrollRef = useRef<HTMLDivElement>(null);
   const [customStart, setCustomStart] = useState<{ coords: [number, number]; name: string } | null>(null);
   const [startPointExpanded, setStartPointExpanded] = useState(false);
@@ -244,9 +245,17 @@ function PageContent() {
   const origin = customStart?.coords ?? mapCenter ?? BARCELONA_CENTER;
 
   const handleMoodSubmit = async (overrideMoodText?: string) => {
-    const text = overrideMoodText ?? moodInput;
+    const text = (overrideMoodText ?? moodInput).trim();
     setInputFocused(false);
-    setLoadingType("search");
+    // Set loading messages by inferred request type (API returns pattern only after response)
+    const looksLikeDestination =
+      (/\b(walk|get me|route)\s+to\b/i.test(text) || /^to\s+\w/i.test(text)) &&
+      !/\b(best|matcha|cafe|cafés|coffee|restaurant|bar|laptop|wifi|pet-friendly|outdoor)\b/i.test(text);
+    const looksLikePlaceSearch =
+      /\b(cafe|cafés|coffee|restaurant|bar|matcha|best\s+\w+|laptop|wifi|pet-friendly|outdoor|terrace|bookshop|museum)\b/i.test(text);
+    if (looksLikeDestination) setLoadingType("route");
+    else if (looksLikePlaceSearch) setLoadingType("search");
+    else setLoadingType("walk");
     setIsLoading(true);
     setRouteError(null);
     setDurationPrompt(null);
@@ -739,11 +748,17 @@ function PageContent() {
                         : loadingPhase === 1
                           ? "finding pleasant streets"
                           : "almost there")
-                    : (loadingPhase === 0
-                        ? "reading reviews"
-                        : loadingPhase === 1
-                          ? "searching the web"
-                          : "almost there")}
+                    : loadingType === "search"
+                      ? (loadingPhase === 0
+                          ? "reading reviews"
+                          : loadingPhase === 1
+                            ? "finding the best spots"
+                            : "checking quality")
+                      : (loadingPhase === 0
+                          ? "planning your walk"
+                          : loadingPhase === 1
+                            ? "scoring streets"
+                            : "building your route")}
                   {".".repeat(Math.min(loadingDots, 3))}
                 </p>
               </div>
@@ -1332,47 +1347,52 @@ function PageContent() {
                           )}
 
                           <div className="flex-1 flex flex-col min-h-0 p-3">
-                            <div className="space-y-1">
-                              <h3 className="font-mono font-bold text-sm line-clamp-1 w-full text-gray-900">
-                                {place.name ?? "Place"}
-                              </h3>
-                              {(() => {
-                                const verifiedTag =
-                                  place.qualifierVerified && (place.qualifierReason ?? placeOptionsQualifierSearched) != null
-                                    ? `✓ ${place.qualifierReason ?? `${placeOptionsQualifierSearched} mentioned in ${place.qualifierSource === "web" ? "web results" : "reviews"}`}`
-                                    : null;
-                                const unverifiedTag =
-                                  !place.qualifierVerified && placeOptionsQualifierSearched != null
-                                    ? (place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`)
-                                    : null;
-                                const featureTagLine = verifiedTag ?? unverifiedTag;
-                                return featureTagLine != null ? (
-                                  <span className={`font-mono text-[10px] uppercase block ${verifiedTag != null ? "text-green-600" : "text-gray-400"}`}>
-                                    {featureTagLine}
-                                  </span>
-                                ) : null;
-                              })()}
-                            </div>
-                            {/* Description + rating (left) | GO button (right) */}
-                            <div className="mt-auto pt-1 flex flex-row items-center gap-2 min-h-0">
-                              <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full">
-                                  {place.description != null ? place.description.replace(/\.$/, "") : null}
-                                </p>
-                                <p className="font-mono text-[10px] text-gray-400 mt-0.5">
-                                  {place.rating != null && (
-                                    <span>{place.rating.toFixed(1)} ★</span>
-                                  )}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleRouteToPlace(place)}
-                                className="flex-shrink-0 self-center bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded hover:opacity-90 min-w-[3rem]"
-                              >
-                                GO
-                              </button>
-                            </div>
+                            {(() => {
+                              const verifiedTag =
+                                place.qualifierVerified && (place.qualifierReason ?? placeOptionsQualifierSearched) != null
+                                  ? `✓ ${place.qualifierReason ?? `${placeOptionsQualifierSearched} mentioned in ${place.qualifierSource === "web" ? "web results" : "reviews"}`}`
+                                  : null;
+                              const unverifiedTag =
+                                !place.qualifierVerified && placeOptionsQualifierSearched != null
+                                  ? (place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`)
+                                  : null;
+                              const featureTagLine = (verifiedTag ?? unverifiedTag)?.trim() ?? "";
+                              const hasFeatureTag = featureTagLine.length > 0;
+                              return (
+                                <>
+                                  <div className={hasFeatureTag ? "space-y-1" : ""}>
+                                    <h3 className="font-mono font-bold text-sm line-clamp-1 w-full text-gray-900">
+                                      {place.name ?? "Place"}
+                                    </h3>
+                                    {hasFeatureTag && (
+                                      <span className={`font-mono text-[10px] uppercase block ${verifiedTag != null ? "text-green-600" : "text-gray-400"}`}>
+                                        {featureTagLine}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {/* Description + rating (left) | GO button (right) */}
+                                  <div className={`mt-auto flex flex-row items-center gap-2 min-h-0 ${hasFeatureTag ? "pt-1" : "pt-0"}`}>
+                                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                      <p className={`font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full ${hasFeatureTag ? "mt-1" : "mt-0"}`}>
+                                        {place.description != null ? place.description.replace(/\.$/, "") : null}
+                                      </p>
+                                      <p className="font-mono text-[10px] text-gray-400 mt-0.5">
+                                        {place.rating != null && (
+                                          <span>{place.rating.toFixed(1)} ★</span>
+                                        )}
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRouteToPlace(place)}
+                                      className="flex-shrink-0 self-center bg-black text-white font-mono font-normal text-sm px-4 py-2 rounded hover:opacity-90 min-w-[3rem]"
+                                    >
+                                      GO
+                                    </button>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                         </Fragment>
