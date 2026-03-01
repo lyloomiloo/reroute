@@ -1336,21 +1336,21 @@ function PageContent() {
                             <h3 className="font-mono font-bold text-sm line-clamp-1 min-h-[1.25em] mb-0.5 w-full text-gray-900">
                               {place.name ?? "Place"}
                             </h3>
-                            {/* 2. Feature qualifier tag (below name) */}
+                            {/* 2. Feature qualifier tag (below name) — single line */}
                             {place.qualifierVerified && (place.qualifierReason ?? placeOptionsQualifierSearched) != null && (
-                              <span className="font-mono text-[10px] text-green-600 uppercase block">
+                              <span className="font-mono text-[10px] text-green-600 uppercase block line-clamp-1 overflow-hidden">
                                 ✓ {place.qualifierReason ?? `${placeOptionsQualifierSearched} mentioned in ${place.qualifierSource === "web" ? "web results" : "reviews"}`}
                               </span>
                             )}
                             {!place.qualifierVerified && placeOptionsQualifierSearched != null && (
-                              <span className="font-mono text-[10px] text-gray-400 uppercase block">
+                              <span className="font-mono text-[10px] text-gray-400 uppercase block line-clamp-1 overflow-hidden">
                                 {place.qualifierReason ?? `nearby · not confirmed for ${placeOptionsQualifierSearched}`}
                               </span>
                             )}
-                            {/* 3. Description + rating (left) | GO button (right) */}
+                            {/* 3. Description + rating (left) | GO button (right) — description single line */}
                             <div className="mt-auto pt-1 flex flex-row items-center gap-2 min-h-0">
                               <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.5em] text-left w-full overflow-hidden">
+                                <p className="font-mono text-[10px] text-gray-500 line-clamp-1 min-h-[1.25em] text-left w-full overflow-hidden">
                                   {place.description != null ? place.description.replace(/\.$/, "") : null}
                                 </p>
                                 <p className="font-mono text-[10px] text-gray-400 mt-0.5">
