@@ -1891,13 +1891,22 @@ function normalizeQualifier(qualifier: string | null): string | null {
   return qualifier;
 }
 
-/** True only when the verification reason contains EXPLICIT negative evidence (forbid, restrict, not allowed, etc.). Generic/no-evidence reasons → false so the place stays as unverified. */
-function isNegativeDisqualifier(reason: string | null | undefined): boolean {
-  if (!reason || typeof reason !== "string") return false;
+/** True only when the verification reason shows negative language DIRECTLY tied to the qualifier (e.g. "no laptops", "pets not allowed"). Generic reasons or no-evidence → false so the place stays as unverified. */
+function isNegativeEvidenceForQualifier(reason: string | null | undefined, qualifier: string | null): boolean {
+  if (!reason || typeof reason !== "string" || !qualifier) return false;
   const r = reason.trim();
   if (!r) return false;
   if (/no\s+mention|not\s+mentioned|insufficient|no\s+evidence|no\s+reviews|couldn't\s+verify|unknown|no\s+data/i.test(r)) return false;
-  return /\b(forbid|forbids|restrict|restricts|not\s+allowed|no\s+(pets?|dogs?|laptops?|wifi|outdoor)|banned|prohibited|not\s+(pet|dog)\s+friendly|not\s+wheelchair|not\s+accessible)\b/i.test(r);
+  const base = qualifier.toLowerCase().replace(/-friendly$/i, "").replace(/-/g, " ").trim();
+  const words = base.split(/\s+/).filter(Boolean);
+  const terms = words.flatMap((w) => [w, w + "s"]);
+  const qualifierTerms = Array.from(new Set(terms)).map((t) => escapeRegex(t)).join("|");
+  if (!qualifierTerms) return false;
+  const negativePattern = new RegExp(
+    `\\b(no|not|don'?t|forbid|restrict|ban|prohibit)\\w*\\s+(\\w+\\s+){0,2}(${qualifierTerms})\\b|\\b(${qualifierTerms})\\s+(\\w+\\s+){0,2}(forbidden|restricted|banned|prohibited|not\\s+allowed)\\b`,
+    "i"
+  );
+  return negativePattern.test(r);
 }
 
 /** Extract a short descriptive label from web snippets for verification (e.g. "KNOWN FOR MATCHA LATTES"). Returns null if too vague. */
@@ -2001,12 +2010,20 @@ async function runQualifierVerification(
     });
     const prompt = `The user wants "${detectedQualifier}" places. For each place below, assess if it likely matches based on the editorial summary, review text, and place type. Consider semantic meaning — e.g. "dog lover" or "bring your dog" means pet-friendly, "spacious tables" or "wifi" suggests laptop-friendly, "terrace" or "outdoor seating" suggests outdoor-friendly.
 
-CRITICAL — NEGATIVE EVIDENCE DISQUALIFIES: If the evidence indicates the place RESTRICTS, FORBIDS, or DOES NOT ALLOW the searched feature, return matches: false. Examples of disqualifying negative evidence: "no laptops", "laptops not allowed", "tables forbid laptops", "no pets inside", "not wheelchair accessible", "no outdoor seating", "forbids laptop usage". These are disqualifying — do not verify the place. When you set matches: false due to negative evidence, set reason to a short uppercase phrase like "RESTRICTS LAPTOPS", "NO PETS ALLOWED", or "NOT WHEELCHAIR ACCESSIBLE".
+NEGATIVE EVIDENCE — BE SPECIFIC: Only flag as negative (matches: false) when the qualifier keyword appears DIRECTLY next to restrictive language. Look ONLY for phrases where the qualifier is tied to the restriction. Examples of negative patterns to catch:
+- "no [qualifier]" (no laptops, no pets, no dogs)
+- "[qualifier] not allowed/permitted"
+- "forbid [qualifier]" / "[qualifier] forbidden"
+- "restrict [qualifier]" / "[qualifier] restricted"
+- "ban [qualifier]" / "[qualifier] banned"
+- "prohibit [qualifier]" / "[qualifier] prohibited"
+- "don't allow [qualifier]"
+A review that says "the service was not great" is NOT negative evidence for "pet-friendly". Only flag as negative if the restriction words are directly about the searched feature. When you set matches: false due to such negative evidence, set reason to a short uppercase phrase like "RESTRICTS LAPTOPS" or "NO PETS ALLOWED". If there is no evidence either way, set matches: false and reason to e.g. "no mention in reviews".
 
 Places:
 ${placeTexts.map((p, i) => `${i}. ${p.name} | Type: ${p.types} | Editorial: ${p.editorial} | Reviews: ${p.reviews}`).join("\n\n")}
 
-Return JSON only: {"results": [{"index": 0, "matches": true, "reason": "short reason in 3-8 words, uppercase"}, ...]} Use index 0-based. If no evidence, set matches false and reason to a short explanation (e.g. "no mention in reviews"). If evidence is negative (place restricts/forbids the feature), set matches false and reason like "RESTRICTS LAPTOPS".`;
+Return JSON only: {"results": [{"index": 0, "matches": true, "reason": "short reason in 3-8 words, uppercase"}, ...]} Use index 0-based.`;
 
     try {
       const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -2023,7 +2040,7 @@ Return JSON only: {"results": [{"index": 0, "matches": true, "reason": "short re
             {
               role: "system",
               content:
-                "You assess whether places match a user's requirement based on available data. Return JSON only. If the evidence says the place RESTRICTS, FORBIDS, or DOES NOT ALLOW the feature (e.g. no laptops, laptops forbidden, not pet friendly), return matches: false and set reason to a short phrase like RESTRICTS LAPTOPS. Negative evidence is disqualifying — do not verify those places.",
+                "You assess whether places match a user's requirement based on available data. Return JSON only. Only flag as negative when the qualifier keyword appears directly next to restrictive language (e.g. no laptops, laptops forbidden, no pets allowed). Do not treat general negative sentiment (e.g. 'service was not great') as negative evidence for the qualifier. When negative evidence is clearly about the feature, set matches: false and reason to a short phrase like RESTRICTS LAPTOPS or NO PETS ALLOWED.",
             },
             { role: "user", content: prompt },
           ],
@@ -2042,7 +2059,7 @@ Return JSON only: {"results": [{"index": 0, "matches": true, "reason": "short re
           }
         }
         const beforeExclude = places.length;
-        const kept = places.filter((p) => p.qualifierVerified || !isNegativeDisqualifier(p.qualifierReason));
+        const kept = places.filter((p) => p.qualifierVerified || !isNegativeEvidenceForQualifier(p.qualifierReason, detectedQualifier));
         if (kept.length < beforeExclude) {
           console.log("[verify] Excluded", beforeExclude - kept.length, "places due to negative evidence (restricts/forbids qualifier)");
           places.length = 0;
@@ -3737,7 +3754,7 @@ export async function POST(req: NextRequest) {
               let maxSearchResults = 10;
               let qualifierBaseType: string | null = null;
               if (hasFeatureQualifier) {
-                qualifierBaseType = PLACE_TYPE_KEYWORDS.find((kw) => parsed.poi_query.toLowerCase().includes(kw)) ?? null;
+                qualifierBaseType = parsed.poi_query ? PLACE_TYPE_KEYWORDS.find((kw) => parsed.poi_query!.toLowerCase().includes(kw)) ?? null : null;
                 if (qualifierBaseType) {
                   poiSearchQuery = `${qualifierBaseType} Barcelona`; // fallback query if full query returns few results
                   console.log("[route] Feature qualifier search: will try full query first, fallback:", poiSearchQuery);
@@ -3786,7 +3803,7 @@ export async function POST(req: NextRequest) {
                 }
                 sortLabel = applySubjectiveSortAndLabel(morePlaces, typeof moodText === "string" ? moodText : null);
                 if (sortLabel == null && hasFeatureQualifier) {
-                  const base = PLACE_TYPE_KEYWORDS.find((kw) => parsed.poi_query.toLowerCase().includes(kw));
+                  const base = parsed.poi_query ? PLACE_TYPE_KEYWORDS.find((kw) => parsed.poi_query!.toLowerCase().includes(kw)) : undefined;
                   sortLabel = base ? base.toUpperCase() : null;
                 }
                 let finalPlaces: PlaceOptionResult[];
@@ -4003,7 +4020,7 @@ export async function POST(req: NextRequest) {
               }
               sortLabel = applySubjectiveSortAndLabel(places, typeof moodText === "string" ? moodText : null);
               if (sortLabel == null && hasFeatureQualifier) {
-                const base = PLACE_TYPE_KEYWORDS.find((kw) => parsed.poi_query.toLowerCase().includes(kw));
+                const base = parsed.poi_query ? PLACE_TYPE_KEYWORDS.find((kw) => parsed.poi_query!.toLowerCase().includes(kw)) : undefined;
                 sortLabel = base ? base.toUpperCase() : null;
               }
               if (places.length >= 2) {

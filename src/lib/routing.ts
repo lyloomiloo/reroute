@@ -63,6 +63,8 @@ export interface PlaceOption {
   qualifierVerified?: boolean;
   /** "editorial" | "review" | "web" when qualifierVerified is true. */
   qualifierSource?: string | null;
+  /** Short reason for verification or unverified (e.g. "CONFIRMED IN REVIEWS", "no mention in reviews"). */
+  qualifierReason?: string | null;
 }
 
 export interface RoutesResponse {
