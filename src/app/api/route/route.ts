@@ -2480,7 +2480,7 @@ Reply with ONLY a valid JSON array, nothing else.`,
         _fitScore: match?.fit_score ?? 5,
         description:
           match?.reason && match.fit_score >= 6
-            ? trimTrailingPunctuation(truncateToWords(match.reason, 12))
+            ? trimTrailingPunctuation(truncateToWords(match.reason, 7))
             : place.description,
       };
     });
@@ -2595,11 +2595,11 @@ async function searchPlace(
     const primaryType = place.primaryType;
     let description: string | null = null;
     if (editorialText && !/experience|discover|explore|authentic|hidden gem/i.test(editorialText)) {
-      description = truncateToWords(editorialText, 12);
+      description = truncateToWords(editorialText, 7);
     }
     if (!description && reviewText) {
       const firstSentence = reviewText.split(/[.!?]/)[0]?.trim() ?? reviewText;
-      description = truncateToWords(firstSentence, 12);
+      description = truncateToWords(firstSentence, 7);
     }
     if (!description) {
       description = placeTypeToLabel(primaryType);
@@ -2643,7 +2643,7 @@ async function searchPlace(
         const d = needLlmDescription[i];
         const text = llmDescriptions[i];
         if (text && out[d.index]) {
-          out[d.index].description = trimTrailingPunctuation(truncateToWords(text, 12));
+          out[d.index].description = trimTrailingPunctuation(truncateToWords(text, 7));
         }
       }
     } catch {
@@ -2926,7 +2926,7 @@ function softenSummaryForEmotionalSupport(summary: string | null | undefined): s
   return softened || "A quiet, peaceful walk";
 }
 
-/** One batch LLM call to generate 8-12 word descriptions for place cards. Length is tuned to fill exactly 2 lines at mobile width. Optional searchQuery tailors descriptions to what the user is looking for. */
+/** One batch LLM call to generate 5-7 word descriptions for place cards. Short and specific. Optional searchQuery tailors descriptions to what the user is looking for. */
 async function generatePlaceDescriptions(
   places: { name: string; primaryType?: string }[],
   searchQuery?: string | null
@@ -2936,8 +2936,8 @@ async function generatePlaceDescriptions(
   if (!apiKey) return places.map(() => "");
   const list = places.map((p, i) => `${i + 1}. ${p.name}${p.primaryType ? ` (${p.primaryType})` : ""}`).join("\n");
   const contextInstruction = searchQuery?.trim()
-    ? `The user searched for: "${searchQuery.trim()}". For each place, write a description that is exactly 8-12 words long, relevant to what they're looking for. You may infer likely features ONLY from the place NAME and TYPE. NEVER invent specific amenities unless the name strongly implies them. If the natural description is too short, add a relevant detail (neighborhood, specialty, atmosphere).`
-    : `Generate a description that is exactly 8-12 words long. Always fill 2 full lines of text at mobile width. If the natural description is too short, add a relevant detail (neighborhood, specialty, atmosphere). Base descriptions ONLY on the place name and type. Never invent amenities or features.`;
+    ? `The user searched for: "${searchQuery.trim()}". For each place, write a 5-7 word description relevant to what they're looking for. Be specific, not generic. Base ONLY on place NAME and TYPE. Never invent amenities unless the name strongly implies them.`
+    : `Write a 5-7 word description for each place. Be specific, not generic. Every word should tell you something unique about the place. Base ONLY on the place name and type. Never invent amenities or features.`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -2953,12 +2953,18 @@ async function generatePlaceDescriptions(
           role: "system",
           content: `${contextInstruction}
 
-Examples:
-- "Matcha-focused coffee shop with a minimalist Japanese-inspired vibe"
-- "Cozy tea house specializing in ceremonial-grade matcha and desserts"
-- "Specialty coffee and matcha bar in the heart of Eixample"
+Examples (5-7 words, specific):
+- "Specialty matcha in a minimalist space"
+- "Greek café with housemade pastries"
+- "Cozy brunch spot with strong wifi"
+- "Specialty coffee with outdoor terrace"
+- "Industrial-chic workspace with great espresso"
 
-Never use: experience, discover, explore, authentic, hidden gem. Never invent: wifi, power sockets, outdoor seating, terrace, cozy atmosphere, spacious, artistic decor — unless the place name explicitly contains these words.
+Bad (too long): "Modern café known for its inviting ambiance and espresso drinks"
+Bad (generic): "Nice café with good food"
+Good: short AND specific — every word should tell you something unique about the place.
+
+Never use: experience, discover, explore, authentic, hidden gem. Never invent details unless the place name explicitly implies them.
 
 Reply with one line per place, in the same order, numbered 1., 2., etc. Nothing else.`,
         },
