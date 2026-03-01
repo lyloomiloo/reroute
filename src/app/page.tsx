@@ -729,7 +729,7 @@ function PageContent() {
                 </pre>
                 <p className="mt-2 font-mono text-xs text-gray-400 lowercase tracking-wide">
                   {loadingPhase === 0
-                    ? "searching reviews"
+                    ? "reading reviews"
                     : loadingPhase === 1
                       ? "searching the web"
                       : "almost there"}
@@ -1320,8 +1320,8 @@ function PageContent() {
                             </div>
                           )}
 
-                          <div className="flex flex-col justify-start h-[160px] p-3">
-                            <h3 className="font-mono font-bold text-sm line-clamp-2 mb-0.5">
+                          <div className="flex flex-col justify-start items-start h-[160px] p-3">
+                            <h3 className="font-mono font-bold text-sm line-clamp-2 mb-0.5 w-full">
                               {place.name}
                             </h3>
                             {place.qualifierVerified && (place.qualifierReason || placeOptionsQualifierSearched) && (
@@ -1339,8 +1339,8 @@ function PageContent() {
                                 <span>{place.rating.toFixed(1)} ★</span>
                               )}
                             </p>
-                            <p className="font-mono text-[10px] text-gray-500 line-clamp-2 flex-grow min-h-0 mt-0.5">
-                              {place.description ? place.description.replace(/\.$/, "") : null}
+                            <p className="font-mono text-[10px] text-gray-500 line-clamp-2 min-h-[2.4em] text-left mt-0.5 w-full">
+                              {place.description != null ? place.description.replace(/\.$/, "") : null}
                             </p>
                             <button
                               type="button"

@@ -1079,7 +1079,7 @@ export default function MapViewClient({
             onClick={() => setSelectedHighlight(null)}
           />
           <div
-            className="absolute left-1/2 top-5 z-[310] w-[85%] max-w-sm -translate-x-1/2 max-h-[50vh] overflow-y-auto rounded-lg bg-white p-4 shadow-lg"
+            className="absolute left-1/2 top-5 z-[310] w-[85%] max-w-sm -translate-x-1/2 max-h-[50vh] overflow-y-auto rounded-lg bg-white p-4 shadow-lg flex flex-col items-start"
           >
             <button
               type="button"
@@ -1089,11 +1089,11 @@ export default function MapViewClient({
             >
               ×
             </button>
-            <p className="font-mono font-bold text-sm text-gray-900 pr-8">
+            <p className="font-mono font-bold text-sm text-gray-900 pr-8 w-full text-left">
               {selectedHighlight.name ?? selectedHighlight.label}
             </p>
-            {selectedHighlight.description && (
-              <p className="mt-2 font-mono text-sm text-gray-600 whitespace-normal">
+            {selectedHighlight.description != null && selectedHighlight.description !== "" && (
+              <p className="mt-2 font-mono text-sm text-gray-600 line-clamp-2 text-left w-full min-h-[2.4em]">
                 {selectedHighlight.description}
               </p>
             )}

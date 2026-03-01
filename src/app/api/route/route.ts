@@ -731,6 +731,7 @@ function scoreRoute(
       "leafy trees": "tree-lined streets",
       "quiet streets": "quiet streets",
       "low traffic": "low traffic",
+      "pleasant streets": "tree-lined paths",
     },
     scenic: {
       "historic buildings": "beautiful architecture",
@@ -801,18 +802,17 @@ function buildSummary(duration: number, distance: number, tags: string[], intent
     return "direct route";
   }
   // Night-only safety tags: only when night mode is on and intent is not calm/nature (they never get these)
-  const allowNightSafetyTags = Boolean(nightMode) && intent !== "calm" && intent !== "nature";
-  if (allowNightSafetyTags && intent === "quick") {
+  if (nightMode && intent !== "calm" && intent !== "nature" && intent === "quick") {
     return "well-lit streets · busy corridors";
   }
   if (tags.length > 0) {
-    if (allowNightSafetyTags) {
+    if (nightMode && intent !== "calm" && intent !== "nature") {
       const nightTags = ["well-lit streets", "busy corridors", ...tags];
       return nightTags.slice(0, 3).join(" · ");
     }
     return tags.slice(0, 3).join(" · ");
   }
-  if (allowNightSafetyTags) {
+  if (nightMode && intent !== "calm" && intent !== "nature") {
     return "well-lit streets · busy corridors";
   }
   return "pleasant route";
@@ -2478,7 +2478,7 @@ Reply with ONLY a valid JSON array, nothing else.`,
         _fitScore: match?.fit_score ?? 5,
         description:
           match?.reason && match.fit_score >= 6
-            ? trimTrailingPunctuation(truncateToWords(match.reason, 8))
+            ? trimTrailingPunctuation(truncateToWords(match.reason, 12))
             : place.description,
       };
     });
@@ -2593,11 +2593,11 @@ async function searchPlace(
     const primaryType = place.primaryType;
     let description: string | null = null;
     if (editorialText && !/experience|discover|explore|authentic|hidden gem/i.test(editorialText)) {
-      description = truncateToWords(editorialText, 8);
+      description = truncateToWords(editorialText, 12);
     }
     if (!description && reviewText) {
       const firstSentence = reviewText.split(/[.!?]/)[0]?.trim() ?? reviewText;
-      description = truncateToWords(firstSentence, 8);
+      description = truncateToWords(firstSentence, 12);
     }
     if (!description) {
       description = placeTypeToLabel(primaryType);
@@ -2641,7 +2641,7 @@ async function searchPlace(
         const d = needLlmDescription[i];
         const text = llmDescriptions[i];
         if (text && out[d.index]) {
-          out[d.index].description = trimTrailingPunctuation(truncateToWords(text, 8));
+          out[d.index].description = trimTrailingPunctuation(truncateToWords(text, 12));
         }
       }
     } catch {
@@ -3524,6 +3524,7 @@ export async function POST(req: NextRequest) {
     if (!skipParsing) {
       try {
         const parsed = await parseMoodRequest(String(moodText).trim());
+        console.log("PARSE RESULT:", JSON.stringify(parsed, null, 2));
         intent = parsed.intent;
         pattern = parsed.pattern;
         suggestedDuration = parsed.suggested_duration;
@@ -3761,8 +3762,8 @@ export async function POST(req: NextRequest) {
             break;
           }
           case "mood_and_poi": {
-            if (parsed.poi_query) {
-              const q = parsed.poi_query.toLowerCase();
+            if (parsedPoiQuery) {
+              const q = parsedPoiQuery.toLowerCase();
               const isViewpointQuery = /viewpoint|mirador|vista|lookout/i.test(q);
               
               // Determine search center — use "area" or "destination" as anchor if set (e.g. "near ELISAVA")
@@ -3844,12 +3845,11 @@ export async function POST(req: NextRequest) {
               let sortLabel: string | null = null;
               console.log("[sort] Checking moodText for subjective qualifier:", moodLower, "detected:", detectedSubjective);
 
-              const hasFeatureQualifier = !!detectedQualifier;
-              let poiSearchQuery = parsed.poi_query;
+              let poiSearchQuery = parsedPoiQuery;
               let maxSearchResults = 10;
               let qualifierBaseType: string | null = null;
-              if (hasFeatureQualifier) {
-                qualifierBaseType = parsed.poi_query ? PLACE_TYPE_KEYWORDS.find((kw) => parsed.poi_query!.toLowerCase().includes(kw)) ?? null : null;
+              if (detectedQualifier != null) {
+                qualifierBaseType = parsedPoiQuery != null ? PLACE_TYPE_KEYWORDS.find((kw) => parsedPoiQuery!.toLowerCase().includes(kw)) ?? null : null;
                 if (qualifierBaseType) {
                   poiSearchQuery = `${qualifierBaseType} Barcelona`; // fallback query if full query returns few results
                   console.log("[route] Feature qualifier search: will try full query first, fallback:", poiSearchQuery);
@@ -3867,7 +3867,7 @@ export async function POST(req: NextRequest) {
               }
               if (searchOffsetNum > 0) {
                 const largerRadius = Math.min(poiSearchRadius * 2, 8000);
-                const refreshQueries = buildRefreshQueries(poi_search_terms, parsed.poi_query ?? null);
+                const refreshQueries = buildRefreshQueries(poi_search_terms, parsedPoiQuery ?? null);
                 const existingIds = new Set(excludePlaceIds);
                 let morePlaces: PlaceOptionResult[] = [];
                 for (const query of refreshQueries.length > 0 ? refreshQueries : [poiSearchQuery]) {
@@ -3897,9 +3897,9 @@ export async function POST(req: NextRequest) {
                   });
                 }
                 sortLabel = applySubjectiveSortAndLabel(morePlaces, typeof moodText === "string" ? moodText : null);
-                if (sortLabel == null && hasFeatureQualifier) {
-                  const base = parsed.poi_query ? PLACE_TYPE_KEYWORDS.find((kw) => parsed.poi_query!.toLowerCase().includes(kw)) : undefined;
-                  sortLabel = base ? base.toUpperCase() : null;
+                if (sortLabel == null && detectedQualifier != null) {
+                  const base = parsedPoiQuery != null ? PLACE_TYPE_KEYWORDS.find((kw) => parsedPoiQuery!.toLowerCase().includes(kw)) : undefined;
+                  sortLabel = base != null ? base.toUpperCase() : null;
                 }
                 let finalPlaces: PlaceOptionResult[];
                 if (detectedSubjective) {
@@ -3951,13 +3951,13 @@ export async function POST(req: NextRequest) {
                 const combined = [...geoViewpoints, ...fromPlaces.filter((p) => !seen.has(p.name))];
                 const dist2 = (p: { lat: number; lng: number }) =>
                   (p.lat - searchLat) ** 2 + (p.lng - searchLng) ** 2;
-                if (isSpecificSearch(parsed.poi_query, typeof moodText === "string" ? moodText : null)) {
+                if (parsedPoiQuery != null && isSpecificSearch(parsedPoiQuery, typeof moodText === "string" ? moodText : null)) {
                   applyKeywordRelevanceSort(combined, typeof moodText === "string" ? moodText : null);
                   places = combined.slice(0, maxSearchResults);
                 } else {
                   places = combined.sort((a, b) => dist2(a) - dist2(b)).slice(0, maxSearchResults);
                 }
-              } else if (hasFeatureQualifier && qualifierBaseType && detectedQualifier) {
+              } else if (detectedQualifier != null && qualifierBaseType != null) {
                 // First search: include qualifier so Google can return e.g. pet-friendly places
                 const fullQuery = `${detectedQualifier} ${qualifierBaseType} Barcelona`;
                 places = await searchPlace(fullQuery, searchLat, searchLng, maxSearchResults, poiSearchRadius);
@@ -4016,8 +4016,8 @@ export async function POST(req: NextRequest) {
 
                 // If still few results, try simplified/generic query (e.g. "cafe Barcelona") — merge with specific first
                 if (allPlaces.length < 5) {
-                  const simplified = simplifyPoiQueryForFallback(parsed.poi_query);
-                  if (simplified && simplified !== parsed.poi_query.trim().toLowerCase()) {
+                  const simplified = parsedPoiQuery != null ? simplifyPoiQueryForFallback(parsedPoiQuery) : null;
+                  if (simplified != null && parsedPoiQuery != null && simplified !== parsedPoiQuery.trim().toLowerCase()) {
                     const broaderResults = await searchPlace(simplified, searchLat, searchLng, maxSearchResults, Math.min(poiSearchRadius * 2, 10000));
                     console.log("[DEBUG-MERGE] Broader search (simplified):", broaderResults.map((p) => p.name));
                     const existingIds = new Set(allPlaces.map((p) => p.place_id ?? p.name));
@@ -4026,7 +4026,7 @@ export async function POST(req: NextRequest) {
                     console.log("[DEBUG-MERGE] Merged (specific first):", allPlaces.map((p) => p.name));
                   }
                 }
-                if (isSpecificSearch(parsed.poi_query, typeof moodText === "string" ? moodText : null)) {
+                if (parsedPoiQuery != null && isSpecificSearch(parsedPoiQuery, typeof moodText === "string" ? moodText : null)) {
                   applyKeywordRelevanceSort(allPlaces, typeof moodText === "string" ? moodText : null);
                 }
                 places = allPlaces.slice(0, maxSearchResults);
@@ -4114,9 +4114,9 @@ export async function POST(req: NextRequest) {
                 });
               }
               sortLabel = applySubjectiveSortAndLabel(places, typeof moodText === "string" ? moodText : null);
-              if (sortLabel == null && hasFeatureQualifier) {
-                const base = parsed.poi_query ? PLACE_TYPE_KEYWORDS.find((kw) => parsed.poi_query!.toLowerCase().includes(kw)) : undefined;
-                sortLabel = base ? base.toUpperCase() : null;
+              if (sortLabel == null && detectedQualifier != null) {
+                const base = parsedPoiQuery != null ? PLACE_TYPE_KEYWORDS.find((kw) => parsedPoiQuery!.toLowerCase().includes(kw)) : undefined;
+                sortLabel = base != null ? base.toUpperCase() : null;
               }
               if (places.length >= 2) {
                 let finalPlaces: PlaceOptionResult[];
@@ -4303,6 +4303,13 @@ export async function POST(req: NextRequest) {
       pattern !== "mood_and_poi" &&
       (destCoords === null || pattern === "mood_only" || pattern === "mood_and_area" || isThemedWalk) &&
       (effectiveDuration == null || (isLoopWithDurationSpecified && suggestedDuration == null));
+
+    // Duration picker should NEVER show for POI/place searches — go straight to place results.
+    const isPoiPlaceSearch =
+      pattern === "mood_and_poi" ||
+      parsedPoiQuery != null ||
+      (Array.isArray(poi_search_terms) && poi_search_terms.length > 0);
+    if (isPoiPlaceSearch) mustAskDuration = false;
 
     console.log("[route] effectiveDuration:", effectiveDuration, "suggested_duration:", suggestedDuration, "mustAskDuration:", mustAskDuration);
 
