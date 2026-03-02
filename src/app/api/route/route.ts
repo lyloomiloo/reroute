@@ -1276,8 +1276,10 @@ async function fetchOrsWaypointRoute(
     [origin[1], origin[0]] as [number, number],
     ...waypoints.map(([lat, lng]) => [lng, lat] as [number, number]),
   ];
+  console.log("[route] fetchOrsWaypointRoute called, coordinates count:", coords.length);
   const body: Record<string, unknown> = { coordinates: coords };
 
+  console.log("[route] fetchOrsWaypointRoute ORS request coordinates:", JSON.stringify(coords));
   const res = await fetch(
     `https://api.openrouteservice.org/v2/directions/${useHikingProfile ? "foot-hiking" : "foot-walking"}/geojson`,
     {
@@ -1286,6 +1288,7 @@ async function fetchOrsWaypointRoute(
       body: JSON.stringify(body),
     }
   );
+  console.log("[route] fetchOrsWaypointRoute ORS response status:", res.status);
   if (!res.ok) throw new Error(`ORS waypoint route error: ${res.status}`);
   const data = await res.json();
   const feature = data.features?.[0];
@@ -4615,8 +4618,8 @@ export async function POST(req: NextRequest) {
 
     // Duration picker should NEVER show for POI/place searches — go straight to place results.
     const isPoiPlaceSearch =
-      pattern === "mood_and_poi" ||
-      parsedPoiQuery != null ||
+    (pattern === "mood_and_poi" && pattern !== "mood_and_area") ||
+    (parsedPoiQuery != null && pattern !== "mood_and_area") ||
       (Array.isArray(poi_search_terms) && poi_search_terms.length > 0);
     if (isPoiPlaceSearch) mustAskDuration = false;
 
@@ -4629,30 +4632,109 @@ export async function POST(req: NextRequest) {
     }
 
     if (mustAskDuration) {
-      const durationOptions = [
-        { label: "5 – 15 min", value: 10 },
-        { label: "15 – 45 min", value: 30 },
-        { label: "30 min – 1.5 hrs", value: 60 },
-        { label: "Surprise me", value: 0 },
-      ];
-      if (skipDuration) {
-        const autoDurations = [10, 20, 40, 60, 90, 120, 180];
-        const auto_duration = autoDurations[Math.floor(Math.random() * autoDurations.length)];
+      const isDiscoverArea = pattern === "mood_and_area" && intent === "discover";
+      let durationOptions: { label: string; value: number }[] = isDiscoverArea
+        ? [
+            { label: "5 – 15 min", value: 10 },
+            { label: "15 – 45 min", value: 30 },
+            { label: "45 min – 1.5 hrs", value: 60 },
+            { label: "Surprise me", value: 0 },
+          ]
+        : [
+            { label: "5 – 15 min", value: 10 },
+            { label: "15 – 45 min", value: 30 },
+            { label: "30 min – 1.5 hrs", value: 60 },
+            { label: "Surprise me", value: 0 },
+          ];
+
+      // For mood_and_area discover: prefetch area POIs to compute max realistic walk duration and filter options
+      let maxRealisticMinutes: number | null = null;
+      if (isDiscoverArea && destCoords && parsedArea) {
+        const areaDiscoverQueries: Record<string, string> = {
+          "poble nou": "street art gallery design studio cultural center",
+          "poblenou": "street art gallery design studio cultural center",
+          "el born": "gallery artisan workshop museum hidden plaza",
+          "born": "gallery artisan workshop museum hidden plaza",
+          "gràcia": "independent shop plaza cultural center vintage",
+          "gracia": "independent shop plaza cultural center vintage",
+          "raval": "gallery museum cultural center contemporary art",
+          "el raval": "gallery museum cultural center contemporary art",
+          "barri gotic": "roman ruins cathedral medieval church museum",
+          "gothic": "roman ruins cathedral medieval church museum",
+          "eixample": "modernist building Gaudi architecture museum",
+          "barceloneta": "market fisherman church beach promenade",
+          "sant antoni": "market vintage shop gallery terrace",
+          "poble sec": "theatre cultural center park garden",
+          "horta": "labyrinth garden park viewpoint",
+          "el carmel": "viewpoint park bunkers mirador",
+          "carmel": "viewpoint park bunkers mirador",
+          "fort pienc": "Disseny Hub museum Encants market modernist",
+          "sarrià": "monastery garden park quiet plaza",
+          "sarria": "monastery garden park quiet plaza",
+        };
+        const areaPoiQueries: Record<string, string> = {
+          calm: "park garden quiet plaza",
+          nature: "park garden green space",
+          discover: "interesting landmark cultural point of interest",
+          scenic: "viewpoint architecture landmark",
+          lively: "market plaza bar",
+          exercise: "park hill trail",
+          cafe: "cafe coffee shop",
+          quick: "plaza landmark",
+        };
+        const areaKey = parsedArea.toLowerCase().trim();
+        const discoveryQuery = areaDiscoverQueries[areaKey] ?? areaPoiQueries[intent] ?? "landmark plaza";
+        const prefetchQuery = `${discoveryQuery} ${parsedArea} Barcelona`.trim();
+        let areaPoisForDuration = await searchPlace(prefetchQuery, destCoords[0], destCoords[1], 8, 3000);
+        const areaBboxForDuration = getAreaBbox(parsedArea);
+        if (areaBboxForDuration) {
+          areaPoisForDuration = areaPoisForDuration.filter(
+            (p) => p.lat >= areaBboxForDuration.minLat && p.lat <= areaBboxForDuration.maxLat && p.lng >= areaBboxForDuration.minLng && p.lng <= areaBboxForDuration.maxLng
+          );
+        }
+        if (areaPoisForDuration.length >= 2) {
+          const lats = areaPoisForDuration.map((p) => p.lat);
+          const lngs = areaPoisForDuration.map((p) => p.lng);
+          const latSpread = Math.max(...lats) - Math.min(...lats);
+          const lngSpread = Math.max(...lngs) - Math.min(...lngs);
+          const spreadKm = Math.sqrt((latSpread * 111) ** 2 + (lngSpread * 82) ** 2);
+          maxRealisticMinutes = Math.round((spreadKm * 2.5) / 4.5 * 60);
+          console.log("[route] Area POI spread:", spreadKm.toFixed(2), "km, max realistic walk:", maxRealisticMinutes, "min");
+
+          // Minimum duration implied by each option (for filtering): 10→5, 30→15, 60→45. Surprise me (0) always kept.
+          const minDurationForValue = (v: number) => (v === 10 ? 5 : v === 30 ? 15 : v === 60 ? 45 : 0);
+          durationOptions = durationOptions.filter((opt) => opt.value === 0 || minDurationForValue(opt.value) <= maxRealisticMinutes!);
+
+          if (durationOptions.filter((o) => o.value > 0).length === 1) {
+            const duration = durationOptions.find((o) => o.value > 0)!.value;
+            console.log("[route] Area too small for duration picker, auto-setting duration:", duration);
+            effectiveDuration = duration;
+            mustAskDuration = false;
+            // Fall through so we don't return needs_duration; we'll continue to area exploration with this duration
+          }
+        }
+      }
+
+      if (mustAskDuration) {
+        if (skipDuration) {
+          const autoDurations = [10, 20, 40, 60, 90, 120, 180];
+          const auto_duration = autoDurations[Math.floor(Math.random() * autoDurations.length)];
+          return NextResponse.json({
+            needs_duration: true,
+            skip_duration: true,
+            auto_duration,
+            intent,
+            message: "How long do you want to walk?",
+            options: durationOptions,
+          });
+        }
         return NextResponse.json({
           needs_duration: true,
-          skip_duration: true,
-          auto_duration,
           intent,
           message: "How long do you want to walk?",
           options: durationOptions,
         });
       }
-      return NextResponse.json({
-        needs_duration: true,
-        intent,
-        message: "How long do you want to walk?",
-        options: durationOptions,
-      });
     }
 
     // Fallback defaults when we proceeded without asking (e.g. night mood_only already set to 20)
@@ -4875,28 +4957,55 @@ export async function POST(req: NextRequest) {
 
       // Generic area POI exploration
       let searchQuery: string;
-      if (parsedPoiQuery) {
+      if (parsedPoiQuery && pattern !== "mood_and_area") {
         searchQuery = parsedPoiQuery.includes("Barcelona")
           ? parsedPoiQuery
           : `${parsedPoiQuery} ${parsedArea || ""} Barcelona`.trim();
       } else if (parsedThemeName) {
         searchQuery = `${parsedThemeName} ${parsedArea || ""} Barcelona`.trim();
       } else {
+        // For discovery walks, use neighbourhood-specific search terms
+        const areaDiscoverQueries: Record<string, string> = {
+          "poble nou": "street art gallery design studio cultural center",
+          "poblenou": "street art gallery design studio cultural center",
+          "el born": "gallery artisan workshop museum hidden plaza",
+          "born": "gallery artisan workshop museum hidden plaza",
+          "gràcia": "independent shop plaza cultural center vintage",
+          "gracia": "independent shop plaza cultural center vintage",
+          "raval": "gallery museum cultural center contemporary art",
+          "el raval": "gallery museum cultural center contemporary art",
+          "barri gotic": "roman ruins cathedral medieval church museum",
+          "gothic": "roman ruins cathedral medieval church museum",
+          "eixample": "modernist building Gaudi architecture museum",
+          "barceloneta": "market fisherman church beach promenade",
+          "sant antoni": "market vintage shop gallery terrace",
+          "poble sec": "theatre cultural center park garden",
+          "horta": "labyrinth garden park viewpoint",
+          "el carmel": "viewpoint park bunkers mirador",
+          "carmel": "viewpoint park bunkers mirador",
+          "fort pienc": "Disseny Hub museum Encants market modernist",
+          "sarrià": "monastery garden park quiet plaza",
+          "sarria": "monastery garden park quiet plaza",
+        };
         const areaPoiQueries: Record<string, string> = {
           calm: "park garden quiet plaza",
           nature: "park garden green space",
-          discover: "historic buildings landmark architecture",
+          discover: "interesting landmark cultural point of interest",
           scenic: "viewpoint architecture landmark",
           lively: "market plaza bar",
           exercise: "park hill trail",
           cafe: "cafe coffee shop",
           quick: "plaza landmark",
         };
-        searchQuery = `${areaPoiQueries[intent] || "landmark plaza"} ${parsedArea || ""} Barcelona`.trim();
+        const areaKey = (parsedArea || "").toLowerCase().trim();
+        const discoveryQuery = intent === "discover" && areaDiscoverQueries[areaKey]
+          ? areaDiscoverQueries[areaKey]
+          : areaPoiQueries[intent] || "landmark plaza";
+        searchQuery = `${discoveryQuery} ${parsedArea || ""} Barcelona`.trim();
       }
-      const areaSearchRadius = walkDuration <= 30 ? 1500 : walkDuration <= 60 ? 2500 : 3000;
-      const areaSearchCount = walkDuration <= 30 ? 5 : 8;
-      let areaPois = await searchPlace(searchQuery, areaCenter[0], areaCenter[1], areaSearchCount, areaSearchRadius);
+      const areaSearchRadius = walkDuration <= 30 ? 2000 : walkDuration <= 60 ? 3000 : 4000;
+      let areaPois = await searchPlace(searchQuery, areaCenter[0], areaCenter[1], 8, areaSearchRadius);
+      console.log("[route] Area POIs BEFORE bbox filter:", areaPois.length, areaPois.map(p => ({ name: p.name, lat: p.lat, lng: p.lng })));
       const areaBbox = parsedArea ? getAreaBbox(parsedArea) : null;
       if (areaBbox) {
         areaPois = areaPois.filter((p) => p.lat >= areaBbox.minLat && p.lat <= areaBbox.maxLat && p.lng >= areaBbox.minLng && p.lng <= areaBbox.maxLng);
@@ -4904,7 +5013,9 @@ export async function POST(req: NextRequest) {
       }
 
       if (areaPois.length >= 2) {
-        const maxAreaPois = walkDuration <= 15 ? 2 : walkDuration <= 30 ? 3 : walkDuration <= 45 ? 4 : walkDuration <= 60 ? 5 : 6;
+        // Use all filtered POIs so the route is longer (e.g. 60 min request → route through 6–8 POIs, not just 4–5). Cap at 8 for ORS sanity.
+        const maxAreaPois = Math.min(areaPois.length, 8);
+        console.log("[route] AREA EXPLORATION: entering with", areaPois.length, "POIs, will use", maxAreaPois);
         // Nearest-neighbor order from routeOrigin so we have a sensible start → end trail
         const ordered: typeof areaPois = [];
         let remaining = areaPois.slice();
@@ -4929,120 +5040,180 @@ export async function POST(req: NextRequest) {
         const startPoi = ordered[0];
         const restPois = ordered.slice(1);
         const restCoords = restPois.map((p) => [p.lat, p.lng] as [number, number]);
+        const explorationCoords = [[startPoi.lat, startPoi.lng] as [number, number], ...restCoords];
+        console.log("[route] Exploration waypoints:", JSON.stringify(explorationCoords));
+        console.log("[route] Calling fetchOrsWaypointRoute with coordinates:", JSON.stringify(explorationCoords));
 
         try {
+          // TODO: For longer exploration routes, consider street-quality-weighted routing between waypoints (e.g. prefer quiet/green) instead of shortest path.
           const explorationRoute = await fetchOrsWaypointRoute(
             [startPoi.lat, startPoi.lng],
             restCoords,
             intent,
             forceAvoidZones
           );
+          console.log("[route] Area exploration route result:", explorationRoute ? "SUCCESS" : "NULL/UNDEFINED");
+          console.log("[route] === EXPLORATION COMPLETE, checking if we return early ===");
 
-          // Minimum 20min for discovery walks; accept all others. Duration is in seconds.
+          // For area discovery ("discovery walk in Poble Nou"), skip duration check — user wants POIs in the area, not an exact time target. Use the exploration route whenever ORS succeeds.
+          const isAreaDiscovery = intent === "discover" && !!parsedArea;
           const minDurationSec = intent === "discover" ? 1200 : 0;
-          if (explorationRoute.duration >= minDurationSec && explorationRoute.duration <= 5400) {
-            const { index } = await loadStreetData();
-            const { score, breakdown, tags } = scoreRoute(explorationRoute.coordinates, intent, index);
-            const poiPoints = loadPoiData();
-            const excludeHighlightTypes = getExcludeHighlightTypes(null);
-            let highlights = findRouteHighlights(
-              explorationRoute.coordinates,
-              intent,
-              index,
-              poiPoints,
-              excludeHighlightTypes,
-              maxPoisFromRouteDistance(explorationRoute.distance)
-            );
+          const durationOk = isAreaDiscovery
+            ? explorationRoute.duration > 0
+            : (explorationRoute.duration >= minDurationSec && explorationRoute.duration <= 5400);
+          if (explorationRoute && durationOk) {
+            try {
+              const { index } = await loadStreetData();
+              const { score, breakdown, tags } = scoreRoute(explorationRoute.coordinates, intent, index);
+              const poiPoints = loadPoiData();
+              const excludeHighlightTypes = getExcludeHighlightTypes(null);
+              let highlights = findRouteHighlights(
+                explorationRoute.coordinates,
+                intent,
+                index,
+                poiPoints,
+                excludeHighlightTypes,
+                maxPoisFromRouteDistance(explorationRoute.distance)
+              );
 
-            for (const wp of ordered) {
-              if (!highlights.some((h) => h.name === wp.name)) {
-                highlights.push({
-                  lat: wp.lat,
-                  lng: wp.lng,
-                  label: `📍 ${wp.name}`,
-                  name: wp.name,
-                  type: "poi",
-                  description: wp.description ?? undefined,
-                  photo_url: wp.photo_url,
-                });
+              for (const wp of ordered) {
+                if (!highlights.some((h) => h.name === wp.name)) {
+                  highlights.push({
+                    lat: wp.lat,
+                    lng: wp.lng,
+                    label: `📍 ${wp.name}`,
+                    name: wp.name,
+                    type: "poi",
+                    description: wp.description ?? undefined,
+                    photo_url: wp.photo_url,
+                  });
+                }
               }
-            }
 
-            if (highlights.length > 0) {
-              try {
-                const labels = await generatePoiLabels(highlights);
-                highlights = highlights.map((h, i) => ({
-                  ...h,
-                  description: trimTrailingPunctuation(labels[i]) || undefined,
-                }));
-              } catch {
-                /* keep existing descriptions */
+              if (highlights.length > 0) {
+                try {
+                  const labels = await generatePoiLabels(highlights);
+                  highlights = highlights.map((h, i) => ({
+                    ...h,
+                    description: trimTrailingPunctuation(labels[i]) || undefined,
+                  }));
+                } catch {
+                  /* keep existing descriptions */
+                }
+                try {
+                  highlights = await enrichHighlightsWithPhotos(highlights);
+                } catch {
+                  /* skip photos */
+                }
               }
-              try {
-                highlights = await enrichHighlightsWithPhotos(highlights);
-              } catch {
-                /* skip photos */
-              }
+
+              // Headline = street quality descriptors (same as normal route). Sub-description = "Discovery walk in [Area]".
+              let summary = buildSummary(explorationRoute.duration, explorationRoute.distance, tags, intent, isNight);
+              if (isEmotionalSupport && summary) summary = softenSummaryForEmotionalSupport(summary);
+
+              // Extract POIs for map pins (same pattern as normal route response)
+              const areaPois = highlights.length > 0
+                ? highlights
+                    .filter((h) => h.type !== "destination" && (h.name ?? h.label ?? "").trim() !== "")
+                    .slice(0, 5)
+                    .map((h) => ({
+                      name: (h.name ?? h.label ?? "").trim(),
+                      lat: h.lat,
+                      lng: h.lng,
+                      type: h.type,
+                      photo_url: (h as { photo_url?: string | null }).photo_url ?? null,
+                      description: (h as { description?: string | null }).description ?? null,
+                    }))
+                : undefined;
+              const result = {
+                coordinates: explorationRoute.coordinates,
+                duration: explorationRoute.duration,
+                distance: explorationRoute.distance,
+                score,
+                breakdown,
+                summary,
+                highlights,
+                ...(areaPois && areaPois.length > 0 && { pois: areaPois }),
+              };
+
+              const lastPoi = ordered[ordered.length - 1];
+              const subDescription = parsedArea ? "Discovery walk in " + parsedArea : "Discovery walk";
+              console.log("[route] About to return response, is this exploration or standard? EXPLORATION");
+              return NextResponse.json({
+                recommended: result,
+                quick: result,
+                alternatives_count: 1,
+                destination_name: subDescription,
+                destination_address: null,
+                pattern: "mood_and_area",
+                intent,
+                end_point: [lastPoi.lat, lastPoi.lng],
+                night_mode: isNight,
+                is_area_exploration: true,
+                area_name: parsedArea ?? null,
+              });
+            } catch (innerErr) {
+              // Scoring/highlights failed; still return exploration route with area POIs so we don't fall through to standard route
+              console.warn("[route] Area exploration scoring/highlights failed, returning route with area POIs:", innerErr instanceof Error ? innerErr.message : innerErr);
             }
+          }
 
-            // Sub-description: list the POIs that informed this route, so the user knows what they'll walk past
-            let summary: string;
-            if (ordered.length >= 2) {
-              const poiNames = ordered.slice(0, 4).map((p) => p.name);
-              summary = "Via " + poiNames.join(" → ");
-            } else {
-              summary = buildSummary(explorationRoute.duration, explorationRoute.distance, tags, intent, isNight);
-            }
-            if (isEmotionalSupport && summary) summary = softenSummaryForEmotionalSupport(summary);
-
-            // Extract POIs for map pins (same pattern as normal route response)
-            const areaPois = highlights.length > 0
-              ? highlights
-                  .filter((h) => h.type !== "destination" && (h.name ?? h.label ?? "").trim() !== "")
-                  .slice(0, 5)
-                  .map((h) => ({
-                    name: (h.name ?? h.label ?? "").trim(),
-                    lat: h.lat,
-                    lng: h.lng,
-                    type: h.type,
-                    photo_url: (h as { photo_url?: string | null }).photo_url ?? null,
-                    description: (h as { description?: string | null }).description ?? null,
-                  }))
-              : undefined;
-            const result = {
-              coordinates: explorationRoute.coordinates,
-              duration: explorationRoute.duration,
-              distance: explorationRoute.distance,
-              score,
-              breakdown,
-              summary,
-              highlights,
-              ...(areaPois && areaPois.length > 0 && { pois: areaPois }),
-            };
-
+          // Exploration route succeeded but duration out of range (too short or >90min): still return it so we don't overwrite with standard route
+          if (explorationRoute) {
             const lastPoi = ordered[ordered.length - 1];
             let trailDestinationName =
               ordered.length > 1 ? `${ordered[0].name} → ${lastPoi.name}` : ordered[0].name;
-            // For discovery walks in a named area, use "discovery walk of [area]" as headline
             if (intent === "discover" && parsedArea) {
               const areaDisplay = parsedArea.charAt(0).toUpperCase() + parsedArea.slice(1);
               trailDestinationName = `Discovery walk of ${areaDisplay}`;
             }
+            const highlightsFromOrdered: RouteHighlightOut[] = ordered.map((p) => ({
+              lat: p.lat,
+              lng: p.lng,
+              label: `📍 ${p.name}`,
+              name: p.name,
+              type: "poi" as const,
+              description: p.description ?? undefined,
+              photo_url: p.photo_url,
+            }));
+            const areaPoisForPins = ordered.slice(0, 5).map((p) => ({
+              name: p.name,
+              lat: p.lat,
+              lng: p.lng,
+              type: "poi" as const,
+              photo_url: p.photo_url ?? null,
+              description: p.description ?? null,
+            }));
+            const fallbackResult = {
+              coordinates: explorationRoute.coordinates,
+              duration: explorationRoute.duration,
+              distance: explorationRoute.distance,
+              score: 0,
+              breakdown: {},
+              summary: buildSummary(explorationRoute.duration, explorationRoute.distance, [], intent, isNight),
+              highlights: highlightsFromOrdered,
+              pois: areaPoisForPins,
+            };
+            console.log("[route] About to return response, is this exploration or standard? EXPLORATION (duration out of range, using fallback)");
             return NextResponse.json({
-              recommended: result,
-              quick: result,
+              recommended: fallbackResult,
+              quick: fallbackResult,
               alternatives_count: 1,
-              destination_name: trailDestinationName,
+              destination_name: parsedArea ? "Discovery walk in " + parsedArea : "Discovery walk",
               destination_address: null,
               pattern: "mood_and_area",
               intent,
               end_point: [lastPoi.lat, lastPoi.lng],
               night_mode: isNight,
+              is_area_exploration: true,
+              area_name: parsedArea ?? null,
             });
           }
-        } catch (e) {
-          console.warn("[route] Area exploration route failed, falling back to direct:", e);
+        } catch (err) {
+          console.warn("[route] Area exploration route FAILED:", err.message || err);
         }
+      } else {
+        console.log("[route] Area exploration skipped: only", areaPois.length, "POIs found in bbox for", parsedArea, "query:", searchQuery);
       }
     }
 

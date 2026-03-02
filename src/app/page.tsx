@@ -305,14 +305,23 @@ function PageContent() {
           setShowQuick(false);
         } else {
           clearTimeout(timeout);
-          const options = Array.isArray(durationResult.options) && durationResult.options.length > 0
-            ? durationResult.options
+          const isDiscoverArea = durationResult.intent === "discover";
+          const defaultOptions = isDiscoverArea
+            ? [
+                { label: "5 – 15 min", value: 10 },
+                { label: "15 – 45 min", value: 30 },
+                { label: "45 min – 1.5 hrs", value: 60 },
+                { label: "Surprise me", value: 0 },
+              ]
             : [
                 { label: "5 – 15 min", value: 10 },
                 { label: "15 – 45 min", value: 30 },
                 { label: "30 min – 1.5 hrs", value: 60 },
                 { label: "Surprise me", value: 0 },
               ];
+          const options = Array.isArray(durationResult.options) && durationResult.options.length > 0
+            ? durationResult.options
+            : defaultOptions;
           setDurationPrompt({
             intent: durationResult.intent ?? "calm",
             message: durationResult.message ?? "How long do you want to walk?",
@@ -903,16 +912,20 @@ function PageContent() {
                       <>
                         <p className="font-mono font-bold text-lg leading-tight uppercase pr-8">{(active.summary ?? "").replace(/^['"]|['"]$/g, "")}</p>
                         {routes.destination_name && (
-                          routes.pattern === "mood_and_area" ? (
+                          routes.is_area_exploration ? (
+                            <button
+                              type="button"
+                              onClick={() => setShowDestinationDetail(true)}
+                              className="flex items-center gap-1 group mt-2 text-left"
+                            >
+                              <span className="font-mono text-sm text-gray-500 reroute-uppercase">Discovery walk in </span>
+                              <span className="font-mono text-sm text-gray-700 reroute-uppercase underline decoration-dashed decoration-gray-400 underline-offset-4 group-active:text-black">
+                                {routes.area_name ?? routes.destination_name?.replace(/^Discovery walk in\s+/i, "") ?? "this area"}
+                              </span>
+                            </button>
+                          ) : routes.pattern === "mood_and_area" ? (
                             <p className="font-mono text-sm text-gray-500 mt-2">
-                              {active.summary
-                                ? (() => {
-                                    const parts = active.summary.split(" · ").map((s) => s.trim()).filter(Boolean);
-                                    if (parts.length >= 2) return `Via ${parts[0]} and ${parts[1]}`;
-                                    if (parts.length === 1) return `Via ${parts[0]}`;
-                                    return `${Math.round(active.duration / 60)} min walk`;
-                                  })()
-                                : `Walk in ${routes.destination_name}`}
+                              {active.summary}
                             </p>
                           ) : (
                             <button
@@ -961,7 +974,7 @@ function PageContent() {
                               type="button"
                               onClick={handleTryAnotherRoute}
                               disabled={isLoading}
-                              className="flex-1 py-3 border border-gray-300 text-gray-700 text-sm reroute-uppercase font-medium rounded-none hover:bg-gray-50 disabled:opacity-50"
+                              className={routes?.is_area_exploration ? "w-full py-3 border border-gray-300 text-gray-700 text-sm reroute-uppercase font-medium rounded-none hover:bg-gray-50 disabled:opacity-50" : "flex-1 py-3 border border-gray-300 text-gray-700 text-sm reroute-uppercase font-medium rounded-none hover:bg-gray-50 disabled:opacity-50"}
                             >
                               ↻ Try another
                               </button>
@@ -971,7 +984,9 @@ function PageContent() {
                                 const distanceToStart = userLocation && routeOrigin
                                   ? getDistanceMeters(userLocation.lat, userLocation.lng, routeOrigin[0], routeOrigin[1])
                                   : null;
-                                const showLetsGo = distanceToStart === null || distanceToStart < 200;
+                                const isAreaExploration = routes?.is_area_exploration === true;
+                                const showLetsGo = !isAreaExploration && (distanceToStart === null || distanceToStart < 200);
+                                if (isAreaExploration) return null;
                                 return showLetsGo ? (
                               <button
                                 type="button"

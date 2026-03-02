@@ -85,6 +85,10 @@ export interface RoutesResponse {
   default_is_fastest?: boolean;
   /** When true, recommended and quick are within ~1 min; client should hide the Switch. */
   routes_are_similar?: boolean;
+  /** When true, route is an area exploration (e.g. discovery walk in Poble Nou); show "OPEN IN MAPS" instead of "LET'S GO". */
+  is_area_exploration?: boolean;
+  /** Area name when is_area_exploration is true (e.g. "Poble Nou"). */
+  area_name?: string | null;
 }
 
 export interface DurationPromptResponse {
@@ -266,6 +270,8 @@ export async function getRoute(
     intent: data.intent ?? undefined,
     isLoop: data.is_loop === true || data.isLoop === true,
     place_options: Array.isArray(data.place_options) ? data.place_options : undefined,
+    is_area_exploration: data.is_area_exploration === true,
+    area_name: data.area_name ?? undefined,
   };
 }
 
@@ -312,6 +318,8 @@ export async function getRouteWithDuration(
     isLoop: data.is_loop === true || data.isLoop === true,
     place_options: Array.isArray(data.place_options) ? data.place_options : undefined,
     end_point: Array.isArray(data.end_point) && data.end_point.length >= 2 ? [Number(data.end_point[0]), Number(data.end_point[1])] : undefined,
+    is_area_exploration: data.is_area_exploration === true,
+    area_name: data.area_name ?? undefined,
   };
 }
 

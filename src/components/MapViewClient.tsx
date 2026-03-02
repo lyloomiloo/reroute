@@ -695,8 +695,7 @@ export default function MapViewClient({
               }}
             />
             <div
-              className="fixed left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] max-w-[280px] bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden animate-slide-up"
-              style={{ bottom: "12rem", zIndex: 150 }}
+              className="fixed left-1/2 top-1/2 z-[150] w-[calc(100vw-2rem)] max-w-[320px] -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl overflow-hidden animate-slide-up"
               role="status"
               aria-live="polite"
               onClick={(e) => e.stopPropagation()}
@@ -710,7 +709,7 @@ export default function MapViewClient({
                     toastTimeoutRef.current = null;
                   }
                 }}
-                className="absolute right-2 top-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-black/20 hover:bg-black/30 text-white font-mono text-sm"
+                className="absolute right-2 top-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-black/30 hover:bg-black/50 text-white font-mono text-sm"
                 aria-label="Dismiss"
               >
                 ✕
@@ -728,7 +727,7 @@ export default function MapViewClient({
                 if (!hasPhoto) return null;
                 if ((photoUrls ?? []).length > 1) {
                   return (
-                    <div className="relative w-full h-[130px] overflow-hidden rounded-t-lg flex-shrink-0 bg-gray-100">
+                    <div className="relative w-full aspect-[4/3] min-h-[200px] overflow-hidden flex-shrink-0 bg-gray-100">
                       <div
                         className="flex overflow-x-auto h-full scrollbar-hide snap-x snap-mandatory w-full"
                         style={{ WebkitOverflowScrolling: "touch" }}
@@ -761,7 +760,7 @@ export default function MapViewClient({
                   );
                 }
                 return (
-                  <div className="w-full h-[130px] overflow-hidden rounded-t-lg flex-shrink-0 bg-gray-100">
+                  <div className="w-full aspect-[4/3] min-h-[200px] overflow-hidden flex-shrink-0 bg-gray-100">
                     <img
                       src={(photoUrls ?? [])[0]}
                       alt={toastPoi.name}
@@ -773,12 +772,10 @@ export default function MapViewClient({
                   </div>
                 );
               })()}
-              <div
-                className={`p-3 relative ${toastPoi.photo_url || (toastPoi.photo_urls?.length ?? 0) > 0 || toastPoi.placeId ? "pt-2" : "pt-10"}`}
-              >
-                <p className="font-mono font-bold text-sm text-gray-900 pr-8">{toastPoi.name}</p>
+              <div className="p-4 pt-3">
+                <p className="font-mono font-bold text-base text-gray-900 pr-8">{toastPoi.name}</p>
                 {toastPoi.description ? (
-                  <p className="font-mono text-xs text-gray-500 mt-1 line-clamp-3">{toastPoi.description}</p>
+                  <p className="font-mono text-sm text-gray-500 mt-1.5 line-clamp-3">{toastPoi.description}</p>
                 ) : null}
               </div>
             </div>
