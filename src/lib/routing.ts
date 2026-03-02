@@ -89,6 +89,8 @@ export interface RoutesResponse {
   is_area_exploration?: boolean;
   /** Area name when is_area_exploration is true (e.g. "Poble Nou"). */
   area_name?: string | null;
+  /** Route start for themed_walk (cluster POI); used for proximity toast. */
+  start_location?: { lat: number; lng: number; name?: string; area?: string } | null;
 }
 
 export interface DurationPromptResponse {

@@ -148,6 +148,17 @@ function PageContent() {
   const [closedWarning, setClosedWarning] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Proximity dialog: "you're a bit far" when tapping LET'S GO >500m from route start. Centered dialog, does not enter nav. */
+  const [farFromRouteDialog, setFarFromRouteDialog] = useState<string | null>(null);
+  const farFromRouteDialogTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const FAR_FROM_ROUTE_MESSAGES = [
+    "you're a tinnnny bit far from the route — head to [NAME] to begin",
+    "hmm, [NAME] is a little walk away — get closer to start navigating",
+    "plot twist: you're not at [NAME] yet! head there first",
+    "the route starts at [NAME] — you'll want to be there (or at least close)",
+    "almost! just get yourself to [NAME] and we'll guide you from there",
+  ];
   const userPositionRef = useRef<{ lat: number; lng: number } | null>(null);
   const moodInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -305,7 +316,7 @@ function PageContent() {
           setShowQuick(false);
         } else {
           clearTimeout(timeout);
-          const isDiscoverArea = durationResult.intent === "discover";
+          const isDiscoverArea = durationResult.intent === "discover" || durationResult.intent === "themed_walk";
           const defaultOptions = isDiscoverArea
             ? [
                 { label: "5 – 15 min", value: 10 },
@@ -426,13 +437,13 @@ function PageContent() {
 
   const handleTryAnotherRoute = async () => {
     if (!lastRouteMoodText.trim() || !routes) return;
-    if (routes.pattern !== "mood_and_area" && routes.pattern !== "mood_only") return;
+    if (routes.pattern !== "mood_and_area" && routes.pattern !== "mood_only" && routes.pattern !== "themed_walk") return;
     setIsLoading(true);
     setRouteError(null);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ROUTE_TIMEOUT_MS);
     try {
-      if (routes.pattern === "mood_only") {
+      if (routes.pattern === "mood_only" || routes.pattern === "themed_walk") {
         const duration = lastRouteDurationMinutes ?? 30;
         const routeResult = await getRouteWithDuration(origin, lastRouteMoodText, duration, {
           signal: controller.signal,
@@ -694,6 +705,38 @@ function PageContent() {
       >
         {nightModeOverride ? "🌙 NIGHT" : "☀️ DAY"}
       </button>
+      {farFromRouteDialog && (
+        <div className="fixed inset-0 z-[50] flex items-center justify-center p-4 bg-black/30" aria-modal="true" role="dialog" aria-labelledby="far-from-route-title">
+          <div
+            className="bg-white rounded-lg shadow-lg p-6 max-w-[320px] w-full font-mono"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p id="far-from-route-title" className="font-mono text-sm text-gray-800 text-center leading-snug reroute-uppercase">
+              {farFromRouteDialog}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setFarFromRouteDialog(null);
+                if (farFromRouteDialogTimeoutRef.current) {
+                  clearTimeout(farFromRouteDialogTimeoutRef.current);
+                  farFromRouteDialogTimeoutRef.current = null;
+                }
+                const active = showQuick && routes?.quick ? routes.quick : routes?.recommended;
+                if (active) {
+                  setRemainingDistance(formatDistance(active.distance));
+                  setRemainingTime(formatDuration(active.duration));
+                  setHasArrived(false);
+                  setIsNavigating(true);
+                }
+              }}
+              className="mt-4 w-full py-3 bg-black text-white text-sm font-mono rounded-none"
+            >
+              GOT IT
+            </button>
+          </div>
+        </div>
+      )}
       {toastMessage && (
         <div
           className="fixed bottom-24 left-4 right-4 z-[60] bg-black text-white font-mono text-sm text-center py-3 px-4 rounded-lg shadow-lg"
@@ -969,12 +1012,12 @@ function PageContent() {
                         </p>
                         <div className="mt-4">
                             <div className="flex gap-2">
-                              {(routes.pattern === "mood_and_area" || routes.pattern === "mood_only") && lastRouteMoodText.trim() && (
+                              {(routes.pattern === "mood_and_area" || routes.pattern === "mood_only" || routes.pattern === "themed_walk") && lastRouteMoodText.trim() && (
                             <button
                               type="button"
                               onClick={handleTryAnotherRoute}
                               disabled={isLoading}
-                              className={routes?.is_area_exploration ? "w-full py-3 border border-gray-300 text-gray-700 text-sm reroute-uppercase font-medium rounded-none hover:bg-gray-50 disabled:opacity-50" : "flex-1 py-3 border border-gray-300 text-gray-700 text-sm reroute-uppercase font-medium rounded-none hover:bg-gray-50 disabled:opacity-50"}
+                              className="flex-1 py-3 border border-gray-300 text-gray-700 text-sm reroute-uppercase font-medium rounded-none hover:bg-gray-50 disabled:opacity-50"
                             >
                               ↻ Try another
                               </button>
@@ -985,14 +1028,38 @@ function PageContent() {
                                   ? getDistanceMeters(userLocation.lat, userLocation.lng, routeOrigin[0], routeOrigin[1])
                                   : null;
                                 const isAreaExploration = routes?.is_area_exploration === true;
-                                const showLetsGo = !isAreaExploration && (distanceToStart === null || distanceToStart < 200);
-                                if (isAreaExploration) return null;
+                                const showLetsGo = isAreaExploration || (distanceToStart === null || distanceToStart < 200);
                                 return showLetsGo ? (
                               <button
                                 type="button"
                                 onClick={() => {
                             const active = showQuick && routes?.quick ? routes.quick : routes?.recommended;
                             if (!active) return;
+                            const startLat = routes?.start_location?.lat;
+                            const startLng = routes?.start_location?.lng;
+                            const routeStart =
+                              startLat != null && startLng != null
+                                ? ([startLat, startLng] as [number, number])
+                                : active.coordinates?.[0]
+                                  ? ([active.coordinates[0][1], active.coordinates[0][0]] as [number, number])
+                                  : null;
+                            const distToStart =
+                              userLocation && routeStart
+                                ? getDistanceMeters(userLocation.lat, userLocation.lng, routeStart[0], routeStart[1])
+                                : null;
+                            if (distToStart != null && distToStart > 500) {
+                              const placeName =
+                                routes?.start_location?.area ?? routes?.start_location?.name ?? routes?.destination_name ?? "the start";
+                              const template =
+                                FAR_FROM_ROUTE_MESSAGES[Math.floor(Math.random() * FAR_FROM_ROUTE_MESSAGES.length)];
+                              setFarFromRouteDialog(template.replace("[NAME]", placeName));
+                              if (farFromRouteDialogTimeoutRef.current) clearTimeout(farFromRouteDialogTimeoutRef.current);
+                              farFromRouteDialogTimeoutRef.current = setTimeout(() => {
+                                setFarFromRouteDialog(null);
+                                farFromRouteDialogTimeoutRef.current = null;
+                              }, 6000);
+                              return;
+                            }
                             setRemainingDistance(formatDistance(active.distance));
                             setRemainingTime(formatDuration(active.duration));
                             setHasArrived(false);

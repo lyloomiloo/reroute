@@ -4623,6 +4623,14 @@ export async function POST(req: NextRequest) {
       (Array.isArray(poi_search_terms) && poi_search_terms.length > 0);
     if (isPoiPlaceSearch) mustAskDuration = false;
 
+    // themed_walk always needs duration when none provided — ask so we don't fall through to "destination not found".
+    if (pattern === "themed_walk" && effectiveDuration == null && suggestedDuration == null) {
+      mustAskDuration = true;
+    }
+    if (pattern === "themed_walk") {
+      console.log("[route] themed_walk needs duration:", { effectiveDuration, mustAskDuration });
+    }
+
     console.log("[route] effectiveDuration:", effectiveDuration, "suggested_duration:", suggestedDuration, "mustAskDuration:", mustAskDuration);
 
     // Exception: night mode mood_only — skip picker and default to 20 min (only case we skip the picker besides user-stated duration)
@@ -5220,20 +5228,106 @@ export async function POST(req: NextRequest) {
     // THEMED WALK ROUTES (after duration is confirmed)
     if (pattern === "themed_walk" && parsedPoiQuery && effectiveDuration != null) {
       const walkDuration = effectiveDuration ?? 30;
-      const maxStops = walkDuration <= 15 ? 2 : walkDuration <= 30 ? 3 : walkDuration <= 60 ? 5 : 7;
-      const searchRadius = Math.min(walkDuration * 80, 5000);
-      const maxSearchResults = maxStops + 3;
+      const maxStops = walkDuration <= 15 ? 2 : walkDuration <= 30 ? 4 : walkDuration <= 60 ? 7 : 9;
+      const searchRadius = Math.min(walkDuration * 120, 10000);
+      const maxSearchResults = maxStops + 5;
 
-      const places = await searchPlace(parsedPoiQuery, originCoords[0], originCoords[1], maxSearchResults, searchRadius);
+      const primaryQuery = parsedPoiQuery;
+      const q = primaryQuery.trim();
+      const themeName = parsedThemeName ?? "";
+      const isGaudiTheme = /\bgaud[ií]\b|gaudi\b/i.test(themeName) || /\bgaud[ií]\b|gaudi\b/i.test(q);
+
+      const secondaryQuery = isGaudiTheme
+        ? "Casa Batlló Casa Amatller Palau de la Música Hospital Sant Pau Casa Vicens Casa Calvet Palau Güell modernisme Barcelona"
+        : (() => {
+            let broader = q
+              .replace(/\bpicasso\b/gi, "")
+              .replace(/\bdom[eè]nech\b/gi, "")
+              .replace(/\bpuig\s+i\s+cadafalch\b/gi, "")
+              .replace(/\bgaud[ií]\b|gaudi\b/gi, "")
+              .replace(/\s+/g, " ")
+              .trim();
+            if (!/notable\s+landmark/i.test(broader)) broader = broader ? `${broader} notable landmark` : "notable landmark";
+            if (!/barcelona/i.test(broader)) broader = `${broader} Barcelona`;
+            return broader.trim() || "notable landmark Barcelona";
+          })();
+
+      const tertiaryQuery = isGaudiTheme
+        ? "Sagrada Familia Park Güell Torre Bellesguard Colonia Güell Barcelona"
+        : null;
+
+      const searchPromises: Promise<PlaceOptionResult[]>[] = [
+        searchPlace(primaryQuery, originCoords[0], originCoords[1], maxSearchResults, searchRadius),
+        searchPlace(secondaryQuery, originCoords[0], originCoords[1], maxSearchResults, searchRadius),
+      ];
+      if (tertiaryQuery) {
+        searchPromises.push(
+          searchPlace(tertiaryQuery, originCoords[0], originCoords[1], maxSearchResults, searchRadius)
+        );
+      }
+      const searchResults = await Promise.all(searchPromises);
+      const primaryPlaces = searchResults[0];
+      const secondaryPlaces = searchResults[1];
+      const tertiaryPlaces = tertiaryQuery ? searchResults[2] : [];
+
+      const normalizeName = (name: string): string => {
+        const lower = (name ?? "").trim().toLowerCase();
+        return lower.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      };
+      const seenNormalized = new Set<string>();
+      const allPlaces: PlaceOptionResult[] = [];
+      for (const p of [...primaryPlaces, ...secondaryPlaces, ...tertiaryPlaces]) {
+        const raw = (p.name ?? "").trim();
+        if (!raw) continue;
+        const norm = normalizeName(raw);
+        if (seenNormalized.has(norm)) continue;
+        seenNormalized.add(norm);
+        allPlaces.push(p);
+      }
+
+      console.log("[route] themed_walk queries:", {
+        primary: primaryQuery,
+        secondary: secondaryQuery,
+        tertiary: tertiaryQuery,
+      });
+      console.log("[route] themed_walk final POIs:", {
+        total: allPlaces.length,
+        names: allPlaces.map((p) => p.name),
+      });
+
+      const places = allPlaces;
 
       if (places.length >= 2) {
-        // Nearest-neighbor greedy ordering to minimize backtracking
-        const remaining = [...places];
-        const ordered: typeof places = [];
-        let currentPos: [number, number] = [originCoords[0], originCoords[1]];
+        // Geographic center of all POIs
+        const avgLat = places.reduce((s, p) => s + p.lat, 0) / places.length;
+        const avgLng = places.reduce((s, p) => s + p.lng, 0) / places.length;
+        // POI closest to center = route start
+        let closestIdx = 0;
+        let closestDist = Infinity;
+        for (let i = 0; i < places.length; i++) {
+          const d = (places[i].lat - avgLat) ** 2 + (places[i].lng - avgLng) ** 2;
+          if (d < closestDist) {
+            closestDist = d;
+            closestIdx = i;
+          }
+        }
+        const closestPoi = places[closestIdx];
+        const startCoords: [number, number] = [closestPoi.lat, closestPoi.lng];
+        const distanceFromUser = Math.round(
+          111320 * Math.sqrt((originCoords[0] - closestPoi.lat) ** 2 + (originCoords[1] - closestPoi.lng) ** 2)
+        );
+        console.log("[route] themed_walk cluster start:", {
+          center: [avgLat, avgLng],
+          startPoi: closestPoi.name,
+          userDist: distanceFromUser,
+        });
 
+        // Nearest-neighbor greedy ordering from start POI (minimize backtracking)
+        const remaining = places.filter((_, i) => i !== closestIdx);
+        const ordered: typeof places = [closestPoi];
+
+        let currentPos: [number, number] = [closestPoi.lat, closestPoi.lng];
         while (ordered.length < maxStops && remaining.length > 0) {
-          // Find nearest unvisited POI to current position
           let nearestIdx = 0;
           let nearestDist = Infinity;
           for (let i = 0; i < remaining.length; i++) {
@@ -5251,9 +5345,10 @@ export async function POST(req: NextRequest) {
         let selected = ordered;
         const { index } = await loadStreetData();
 
+        // Route starts at cluster POI; waypoints = rest of selected (start POI is origin)
         let themedRoute = await fetchOrsWaypointRoute(
-          originCoords,
-          selected.map((p) => [p.lat, p.lng] as [number, number]),
+          startCoords,
+          selected.slice(1).map((p) => [p.lat, p.lng] as [number, number]),
           intent,
           forceAvoidZones
         );
@@ -5262,8 +5357,8 @@ export async function POST(req: NextRequest) {
         while (themedRoute.duration > maxDurationSec && selected.length > 2) {
           selected = selected.slice(0, selected.length - 1);
           themedRoute = await fetchOrsWaypointRoute(
-            originCoords,
-            selected.map((p) => [p.lat, p.lng] as [number, number]),
+            startCoords,
+            selected.slice(1).map((p) => [p.lat, p.lng] as [number, number]),
             intent,
             forceAvoidZones
           );
@@ -5310,6 +5405,10 @@ export async function POST(req: NextRequest) {
           highlights,
         };
 
+        const startArea =
+          closestPoi.address != null && closestPoi.address.trim() !== ""
+            ? closestPoi.address.split(",")[0]?.trim() || closestPoi.address.trim()
+            : null;
         return NextResponse.json({
           recommended: result,
           quick: result,
@@ -5319,6 +5418,12 @@ export async function POST(req: NextRequest) {
           pattern: "themed_walk",
           intent,
           night_mode: isNight,
+          start_location: {
+            lat: closestPoi.lat,
+            lng: closestPoi.lng,
+            name: closestPoi.name,
+            ...(startArea ? { area: startArea } : {}),
+          },
         });
       }
 
@@ -5811,6 +5916,7 @@ export async function POST(req: NextRequest) {
 
     const needsDestination = pattern === "mood_and_destination" || pattern === "mood_and_area" || pattern === "mood_and_poi";
     if (needsDestination && destCoords === null) {
+      console.log("[route] DESTINATION NOT FOUND debug:", { destination: destination_name, pattern, area: parsedArea, intent });
       return NextResponse.json(
         { error: "Couldn't find that destination — try being more specific." },
         { status: 400 }
@@ -5818,6 +5924,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (destCoords === null) {
+      console.log("[route] DESTINATION NOT FOUND debug:", { destination: destination_name, pattern, area: parsedArea, intent });
       return NextResponse.json(
         { error: "Couldn't find that destination — try being more specific." },
         { status: 400 }

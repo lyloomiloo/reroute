@@ -607,6 +607,7 @@ export default function MapViewClient({
           placeId: (h as RouteHighlight).placeId,
           photoRef: (h as RouteHighlight).photoRef,
           photo_url: (h as RouteHighlight).photo_url ?? undefined,
+          photo_urls: (h as RouteHighlight).photo_urls ?? undefined,
           type: h.type,
         });
         break;
@@ -695,7 +696,7 @@ export default function MapViewClient({
               }}
             />
             <div
-              className="fixed left-1/2 top-1/2 z-[150] w-[calc(100vw-2rem)] max-w-[320px] -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl overflow-hidden animate-slide-up"
+              className="fixed left-1/2 top-[35%] -translate-x-1/2 w-[calc(100vw-2rem)] max-w-[280px] bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden animate-slide-up z-[150]"
               role="status"
               aria-live="polite"
               onClick={(e) => e.stopPropagation()}
@@ -709,7 +710,8 @@ export default function MapViewClient({
                     toastTimeoutRef.current = null;
                   }
                 }}
-                className="absolute right-2 top-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-black/30 hover:bg-black/50 text-white font-mono text-sm"
+                className="absolute right-1 top-1 z-10 p-2 flex items-center justify-center text-white font-mono text-xl"
+                style={{ textShadow: "0 1px 3px rgba(0,0,0,0.5)" }}
                 aria-label="Dismiss"
               >
                 ✕
@@ -727,40 +729,28 @@ export default function MapViewClient({
                 if (!hasPhoto) return null;
                 if ((photoUrls ?? []).length > 1) {
                   return (
-                    <div className="relative w-full aspect-[4/3] min-h-[200px] overflow-hidden flex-shrink-0 bg-gray-100">
+                    <div className="w-full h-[130px] overflow-hidden rounded-t-lg flex-shrink-0 bg-gray-100">
                       <div
-                        className="flex overflow-x-auto h-full scrollbar-hide snap-x snap-mandatory w-full"
-                        style={{ WebkitOverflowScrolling: "touch" }}
+                        className="flex overflow-x-auto h-full scrollbar-hide snap-x snap-mandatory w-full gap-1"
+                        style={{ WebkitOverflowScrolling: "touch", scrollBehavior: "smooth" }}
                       >
                         {(photoUrls ?? []).map((url, j) => (
                           <img
                             key={j}
                             src={url}
                             alt=""
-                            className="w-full h-full flex-shrink-0 object-cover snap-start min-w-full"
+                            className="w-[85%] min-w-[85%] h-full flex-shrink-0 object-cover snap-start"
                             onError={(e) => {
                               (e.target as HTMLImageElement).style.display = "none";
                             }}
                           />
                         ))}
                       </div>
-                      <div
-                        className="absolute left-0 top-0 bottom-0 w-6 flex items-center justify-center bg-gradient-to-r from-black/30 to-transparent pointer-events-none"
-                        aria-hidden
-                      >
-                        <span className="text-white text-sm">‹</span>
-                      </div>
-                      <div
-                        className="absolute right-0 top-0 bottom-0 w-6 flex items-center justify-center bg-gradient-to-l from-black/30 to-transparent pointer-events-none"
-                        aria-hidden
-                      >
-                        <span className="text-white text-sm">›</span>
-                      </div>
                     </div>
                   );
                 }
                 return (
-                  <div className="w-full aspect-[4/3] min-h-[200px] overflow-hidden flex-shrink-0 bg-gray-100">
+                  <div className="w-full h-[130px] overflow-hidden rounded-t-lg flex-shrink-0 bg-gray-100">
                     <img
                       src={(photoUrls ?? [])[0]}
                       alt={toastPoi.name}
@@ -772,10 +762,12 @@ export default function MapViewClient({
                   </div>
                 );
               })()}
-              <div className="p-4 pt-3">
-                <p className="font-mono font-bold text-base text-gray-900 pr-8">{toastPoi.name}</p>
+              <div
+                className={`p-3 relative ${toastPoi.photo_url || (toastPoi.photo_urls?.length ?? 0) > 0 || toastPoi.placeId ? "pt-2" : "pt-10"}`}
+              >
+                <p className="font-mono font-bold text-sm text-gray-900 pr-8">{toastPoi.name}</p>
                 {toastPoi.description ? (
-                  <p className="font-mono text-sm text-gray-500 mt-1.5 line-clamp-3">{toastPoi.description}</p>
+                  <p className="font-mono text-xs text-gray-500 mt-1 line-clamp-3">{toastPoi.description}</p>
                 ) : null}
               </div>
             </div>
@@ -881,7 +873,7 @@ export default function MapViewClient({
           </>
         )}
         {(() => {
-          const showPoiInPreview = ["discover", "scenic", "lively", "cafe"].includes(routeIntent ?? "");
+          const showPoiInPreview = ["discover", "scenic", "lively", "cafe", "themed_walk"].includes(routeIntent ?? "");
           const allHighlights = isNavigating || showPoiInPreview ? (highlights ?? []) : [];
           const isRealPoi = (h: RouteHighlight) => !!h.placeId;
           const hasName = (h: RouteHighlight) => (h.name ?? h.label ?? "").trim() !== "";
@@ -891,7 +883,7 @@ export default function MapViewClient({
           };
           const visibleHighlights = isNavigating
             ? allHighlights.filter(hasName)
-            : allHighlights.filter((h) => h.type === "destination" || isRealPoi(h)).filter(hasRealName);
+            : allHighlights.filter((h) => (h.type === "destination" || isRealPoi(h) || (showPoiInPreview && hasRealName(h))) && hasRealName(h));
           return visibleHighlights.map((h, i) => {
             const isDestination = h.type === "destination";
             const isPoiSeen = isNavigating && seenPoiKeys.has(poiKey(h.lat, h.lng));
@@ -921,6 +913,7 @@ export default function MapViewClient({
                       placeId: (h as RouteHighlight).placeId,
                       photoRef: (h as RouteHighlight).photoRef,
                       photo_url: (h as RouteHighlight).photo_url ?? undefined,
+                      photo_urls: (h as RouteHighlight).photo_urls ?? undefined,
                       type: h.type,
                     });
                   },
