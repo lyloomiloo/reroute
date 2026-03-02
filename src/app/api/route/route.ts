@@ -5218,7 +5218,7 @@ export async function POST(req: NextRequest) {
             });
           }
         } catch (err) {
-          console.warn("[route] Area exploration route FAILED:", err.message || err);
+          console.warn("[route] Area exploration route FAILED:", err instanceof Error ? err.message : err);
         }
       } else {
         console.log("[route] Area exploration skipped: only", areaPois.length, "POIs found in bbox for", parsedArea, "query:", searchQuery);
@@ -5250,7 +5250,21 @@ export async function POST(req: NextRequest) {
       if (llmQueries.length === 0) {
         const openaiKey = process.env.OPENAI_API_KEY;
         if (openaiKey && primaryPlaces.length > 0) {
-          const userContent = `The user wants a themed walk about: ${parsedThemeName || primaryQuery}. The primary search '${primaryQuery}' already found these places: ${primaryPlaces.map((p) => p.name).join(", ")}. Generate 2-3 different Google Places search queries that would find RELATED but DIFFERENT landmarks, buildings, or points of interest in Barcelona. Think broader — related architects, styles, movements, nearby attractions. Each query should be 4-8 words max.`;
+          const userContent = `The user wants a themed walk about: ${parsedThemeName || primaryQuery}. The primary search '${primaryQuery}' already found these places: ${primaryPlaces.map((p) => p.name).join(", ")}.
+
+Generate 2-3 different Google Places search queries that would find RELATED but DIFFERENT landmarks in Barcelona.
+
+CRITICAL: Every query MUST stay tightly connected to the theme. For example:
+- 'Gaudí trail' → search for OTHER Gaudí buildings, Catalan modernisme landmarks, works by Gaudí's contemporaries (Domènech i Montaner, Puig i Cadafalch), and buildings from the same architectural movement
+- 'street art walk' → search for murals, graffiti, urban art installations — NOT general art galleries
+- 'gothic quarter history' → search for medieval buildings, Roman ruins, gothic churches — NOT modern restaurants in the area
+
+Do NOT generate generic queries like 'popular landmarks Barcelona' or 'things to see Barcelona'. Every result should feel like it belongs on the same themed trail.
+- Queries should find PHYSICAL LANDMARKS, BUILDINGS, MONUMENTS, PARKS, PLAZAS, or PUBLIC ART that a walker can see from the street
+- NEVER generate queries that would return: offices, firms, agencies, tour companies, schools, shops, restaurants, or any business/service
+- Focus on architectural works, historical sites, monuments, sculptures, notable facades, and public spaces
+- Include specific building names, architect names, or architectural style terms
+Each query 4-8 words, always ending with 'Barcelona'.`;
           try {
             const llmRes = await fetch("https://api.openai.com/v1/chat/completions", {
               method: "POST",
@@ -5317,7 +5331,56 @@ export async function POST(req: NextRequest) {
         names: allPlaces.map((p) => p.name),
       });
 
-      const places = allPlaces;
+      let filteredPlaces = allPlaces;
+      if (allPlaces.length > 0 && process.env.OPENAI_API_KEY) {
+        try {
+          const filterRes = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              max_tokens: 500,
+              temperature: 0,
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "You filter POIs for a themed walking trail. Return ONLY a JSON array of the place names that genuinely fit the theme. Remove anything unrelated.",
+                },
+                {
+                  role: "user",
+                  content: `Theme: '${parsedThemeName ?? primaryQuery}'. Which of these places belong on this trail? ${allPlaces.map((p) => p.name).join(", ")}`,
+                },
+              ],
+            }),
+          });
+          if (filterRes.ok) {
+            const filterData = (await filterRes.json()) as { choices?: { message?: { content?: string } }[] };
+            const raw = filterData.choices?.[0]?.message?.content?.trim() ?? "";
+            const jsonStr = raw.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+            const allowedNames = JSON.parse(jsonStr) as unknown;
+            if (Array.isArray(allowedNames) && allowedNames.length > 0) {
+              const allowedSet = new Set(
+                (allowedNames as string[]).filter((x): x is string => typeof x === "string").map((n) => normalizeName(n))
+              );
+              filteredPlaces = allPlaces.filter((p) => allowedSet.has(normalizeName(p.name ?? "")));
+            }
+          }
+        } catch (e) {
+          console.warn("[route] themed_walk relevance filter failed:", e);
+        }
+      }
+      const removedNames = allPlaces.filter((p) => !filteredPlaces.includes(p)).map((p) => p.name);
+      console.log("[route] themed_walk relevance filter:", {
+        before: allPlaces.length,
+        after: filteredPlaces.length,
+        removed: removedNames,
+      });
+
+      const places = filteredPlaces;
 
       if (places.length >= 2) {
         // Geographic center of all POIs
