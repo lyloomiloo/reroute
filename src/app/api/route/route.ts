@@ -5233,42 +5233,70 @@ export async function POST(req: NextRequest) {
       const maxSearchResults = maxStops + 5;
 
       const primaryQuery = parsedPoiQuery;
-      const q = primaryQuery.trim();
-      const themeName = parsedThemeName ?? "";
-      const isGaudiTheme = /\bgaud[ií]\b|gaudi\b/i.test(themeName) || /\bgaud[ií]\b|gaudi\b/i.test(q);
+      const primaryPlaces = await searchPlace(
+        primaryQuery,
+        originCoords[0],
+        originCoords[1],
+        maxSearchResults,
+        searchRadius
+      );
 
-      const secondaryQuery = isGaudiTheme
-        ? "Casa Batlló Casa Amatller Palau de la Música Hospital Sant Pau Casa Vicens Casa Calvet Palau Güell modernisme Barcelona"
-        : (() => {
-            let broader = q
-              .replace(/\bpicasso\b/gi, "")
-              .replace(/\bdom[eè]nech\b/gi, "")
-              .replace(/\bpuig\s+i\s+cadafalch\b/gi, "")
-              .replace(/\bgaud[ií]\b|gaudi\b/gi, "")
-              .replace(/\s+/g, " ")
-              .trim();
-            if (!/notable\s+landmark/i.test(broader)) broader = broader ? `${broader} notable landmark` : "notable landmark";
-            if (!/barcelona/i.test(broader)) broader = `${broader} Barcelona`;
-            return broader.trim() || "notable landmark Barcelona";
-          })();
+      const themeCacheKey = `themed-queries:${(parsedThemeName || primaryQuery).toLowerCase().trim()}`;
+      const THEMED_QUERIES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+      let cachedQueries: string[] | null = await getSearchCache<string[]>(themeCacheKey, THEMED_QUERIES_CACHE_TTL_MS);
+      console.log("[search-cache] themed queries cache:", { key: themeCacheKey, hit: !!cachedQueries });
 
-      const tertiaryQuery = isGaudiTheme
-        ? "Sagrada Familia Park Güell Torre Bellesguard Colonia Güell Barcelona"
-        : null;
-
-      const searchPromises: Promise<PlaceOptionResult[]>[] = [
-        searchPlace(primaryQuery, originCoords[0], originCoords[1], maxSearchResults, searchRadius),
-        searchPlace(secondaryQuery, originCoords[0], originCoords[1], maxSearchResults, searchRadius),
-      ];
-      if (tertiaryQuery) {
-        searchPromises.push(
-          searchPlace(tertiaryQuery, originCoords[0], originCoords[1], maxSearchResults, searchRadius)
-        );
+      let llmQueries: string[] = cachedQueries ?? [];
+      if (llmQueries.length === 0) {
+        const openaiKey = process.env.OPENAI_API_KEY;
+        if (openaiKey && primaryPlaces.length > 0) {
+          const userContent = `The user wants a themed walk about: ${parsedThemeName || primaryQuery}. The primary search '${primaryQuery}' already found these places: ${primaryPlaces.map((p) => p.name).join(", ")}. Generate 2-3 different Google Places search queries that would find RELATED but DIFFERENT landmarks, buildings, or points of interest in Barcelona. Think broader — related architects, styles, movements, nearby attractions. Each query should be 4-8 words max.`;
+          try {
+            const llmRes = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${openaiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "gpt-4o-mini",
+                max_tokens: 150,
+                temperature: 0.3,
+                messages: [
+                  {
+                    role: "system",
+                    content:
+                      "You generate Google Places search queries. Return ONLY a JSON array of 2-3 short search query strings, no explanation.",
+                  },
+                  { role: "user", content: userContent },
+                ],
+              }),
+            });
+            if (llmRes.ok) {
+              const llmData = (await llmRes.json()) as { choices?: { message?: { content?: string } }[] };
+              const raw = llmData.choices?.[0]?.message?.content?.trim() ?? "";
+              const jsonStr = raw.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+              const parsed = JSON.parse(jsonStr) as unknown;
+              if (Array.isArray(parsed)) {
+                llmQueries = parsed.filter((x): x is string => typeof x === "string" && x.trim().length > 0).slice(0, 3);
+                setSearchCacheFireAndForget(themeCacheKey, llmQueries);
+              }
+            }
+          } catch (e) {
+            console.warn("[route] themed_walk LLM query generation failed:", e);
+          }
+        }
       }
-      const searchResults = await Promise.all(searchPromises);
-      const primaryPlaces = searchResults[0];
-      const secondaryPlaces = searchResults[1];
-      const tertiaryPlaces = tertiaryQuery ? searchResults[2] : [];
+      console.log("[route] themed_walk LLM queries:", llmQueries);
+      console.log("[route] themed_walk cache status:", {
+        queriesCached: !!cachedQueries,
+        searchResultsCached: "handled by searchPlace",
+      });
+
+      const extraPromises = llmQueries.map((query) =>
+        searchPlace(query, originCoords[0], originCoords[1], maxSearchResults, searchRadius)
+      );
+      const extraResults = await Promise.all(extraPromises);
 
       const normalizeName = (name: string): string => {
         const lower = (name ?? "").trim().toLowerCase();
@@ -5276,7 +5304,7 @@ export async function POST(req: NextRequest) {
       };
       const seenNormalized = new Set<string>();
       const allPlaces: PlaceOptionResult[] = [];
-      for (const p of [...primaryPlaces, ...secondaryPlaces, ...tertiaryPlaces]) {
+      for (const p of [primaryPlaces, ...extraResults].flat()) {
         const raw = (p.name ?? "").trim();
         if (!raw) continue;
         const norm = normalizeName(raw);
@@ -5284,13 +5312,7 @@ export async function POST(req: NextRequest) {
         seenNormalized.add(norm);
         allPlaces.push(p);
       }
-
-      console.log("[route] themed_walk queries:", {
-        primary: primaryQuery,
-        secondary: secondaryQuery,
-        tertiary: tertiaryQuery,
-      });
-      console.log("[route] themed_walk final POIs:", {
+      console.log("[route] themed_walk total POIs after all queries:", {
         total: allPlaces.length,
         names: allPlaces.map((p) => p.name),
       });
