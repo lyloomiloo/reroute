@@ -4618,8 +4618,8 @@ export async function POST(req: NextRequest) {
 
     // Duration picker should NEVER show for POI/place searches — go straight to place results.
     const isPoiPlaceSearch =
-    (pattern === "mood_and_poi" && pattern !== "mood_and_area") ||
-    (parsedPoiQuery != null && pattern !== "mood_and_area") ||
+      (pattern === "mood_and_poi") ||
+      (parsedPoiQuery != null && pattern !== "mood_and_area") ||
       (Array.isArray(poi_search_terms) && poi_search_terms.length > 0);
     if (isPoiPlaceSearch) mustAskDuration = false;
 
